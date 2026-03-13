@@ -1,0 +1,8 @@
+{
+  "version": 2,
+  "functions": {
+    "api/auth.js": {
+      "runtime": "@vercel/node@3"
+    }
+  }
+}
