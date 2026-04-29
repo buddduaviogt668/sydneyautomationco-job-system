@@ -6865,7 +6865,14 @@ function drawFinancialCharts(){
 }
 
 
+function toggleFinBasis(){
+  window._finBasis = (window._finBasis === 'invoiced') ? 'paid' : 'invoiced';
+  const el = document.getElementById('main');
+  if(el){ el.innerHTML = renderFinancials(); drawFinancialCharts(); }
+}
+
 function renderFinancials(){
+  window._finBasis = window._finBasis || 'paid';
   const todayStr=today();
   const now=new Date();
   const thisYear=now.getFullYear();
@@ -6975,12 +6982,23 @@ function renderFinancials(){
 
   // Monthly breakdown (last 6 months)
   const MONTHS=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  const accrualBasis = window._finBasis === 'invoiced';
   const monthRows=[];
   for(let i=5;i>=0;i--){
     let m=thisMonth-i; let y=thisYear;
     if(m<0){m+=12;y--;}
     const ms=`${y}-${String(m+1).padStart(2,'0')}`;
-    const mJobs=paidJobs.filter(j=>j.paidDate&&j.paidDate.startsWith(ms));
+    let mJobs;
+    if(accrualBasis){
+      // Invoiced basis: paid + invoiced/overdue jobs, by invoice date
+      const accrualStatuses = ['paid','invoiced','overdue'];
+      mJobs = jobs.filter(j => accrualStatuses.includes(j.status) && (() => {
+        const d = j.invoiceDate || j.invoiceDue || j.scheduledDate || '';
+        return d.startsWith(ms);
+      })());
+    } else {
+      mJobs = paidJobs.filter(j=>j.paidDate&&j.paidDate.startsWith(ms));
+    }
     const mRev=mJobs.reduce((s,j)=>s+jobRevenue(j),0);
     const mCost=overheadMonthlyTotal();
     // Supplier costs by invoice date (cash basis) — not by job paid date
@@ -7138,7 +7156,16 @@ function renderFinancials(){
 
     <!-- MONTHLY BREAKDOWN -->
     <div style="background:#fff;border-radius:12px;border:1px solid #e2e8f0;overflow:hidden">
-      <div style="padding:16px 20px;border-bottom:1px solid #f1f5f9;font-size:15px;font-weight:700">Monthly Breakdown</div>
+      <div style="padding:16px 20px;border-bottom:1px solid #f1f5f9;display:flex;justify-content:space-between;align-items:center">
+        <div style="font-size:15px;font-weight:700">Monthly Breakdown</div>
+        <div style="display:flex;align-items:center;gap:8px">
+          <span style="font-size:11px;color:#94a3b8;font-weight:600">VIEW BY</span>
+          <button onclick="toggleFinBasis()" style="display:flex;background:#f1f5f9;border:1px solid #e2e8f0;border-radius:20px;padding:3px;cursor:pointer;gap:2px">
+            <span style="padding:4px 12px;border-radius:16px;font-size:11px;font-weight:700;transition:all 0.15s;background:${!accrualBasis?'#1e3a5f':'transparent'};color:${!accrualBasis?'#fff':'#64748b'}">Paid Date</span>
+            <span style="padding:4px 12px;border-radius:16px;font-size:11px;font-weight:700;transition:all 0.15s;background:${accrualBasis?'#1e3a5f':'transparent'};color:${accrualBasis?'#fff':'#64748b'}">Invoice Date</span>
+          </button>
+        </div>
+      </div>
       <div style="display:grid;grid-template-columns:80px 60px 1fr 130px 130px 130px;padding:10px 16px;background:#f8fafc;border-bottom:1px solid #e2e8f0;font-size:11px;font-weight:700;color:#64748b;text-transform:uppercase">
         <div>Month</div><div style="text-align:center">Jobs</div><div style="padding-left:8px">vs Min Target</div><div style="text-align:right">Revenue</div><div style="text-align:right">Est. Take-Home</div><div style="text-align:right">Status</div>
       </div>
@@ -7155,7 +7182,14 @@ function renderFinancials(){
         <div style="text-align:right"><span style="font-size:12px;font-weight:700;color:${r.vsColor}">${r.rev>0?r.vs:'—'}</span></div>
       </div>`).join('')}
     </div>
-    <div style="margin-top:10px;padding:10px 14px;background:#f8fafc;border-radius:8px;font-size:12px;color:#64748b;line-height:1.6"><strong style="color:#475569">How Take-Home is calculated:</strong> Revenue (by paid date) minus supplier invoice costs (by invoice date) minus monthly overheads (${fmt$(overheadMonthlyTotal())}/mo). This is cash-basis — costs appear in the month they were invoiced to you, not the month the job was paid. Adjust overheads in Settings → Business Setup.</div>
+    <div style="margin-top:10px;padding:10px 14px;background:#f8fafc;border-radius:8px;font-size:12px;color:#64748b;line-height:1.6">
+      <strong style="color:#475569">How Take-Home is calculated:</strong> Revenue (by <strong>${accrualBasis ? 'invoice date — includes unpaid invoices' : 'paid date — cash received only'}</strong>) minus supplier invoice costs (by invoice date) minus monthly overheads (${fmt$(overheadMonthlyTotal())}/mo).
+      ${accrualBasis
+        ? ' <span style="color:#6366f1;font-weight:600">Invoice Date view</span> shows when you earned revenue — best for understanding business performance and job volume trends.'
+        : ' <span style="color:#1e3a5f;font-weight:600">Paid Date view</span> shows actual cash received — use for tax and cash position. Switch to Invoice Date for a truer picture of monthly performance.'
+      }
+      Adjust overheads in Settings → Business Setup.
+    </div>
   </div>
 
     <!-- ── JOB PROFITABILITY RANKING ── -->
@@ -8698,9 +8732,8 @@ function _renderNotesSection(j){
 // ─── BREAK-EVEN CALCULATOR ───────────────────────────────────────────────────
 function renderBreakEven(){
   const ohMonthly = overheadMonthlyTotal ? overheadMonthlyTotal() : 0;
-  const wage = Number(CFG.payGross)||0;
-  const superAmt = wage * (Number(CFG.superRate)||0.115);
-  const totalFixed = ohMonthly + wage + superAmt;
+  const wage = (CFG.incomeMin/12)||0;
+  const totalFixed = ohMonthly + wage;
   const jobsPerMonth = jobsThisMonthCount ? jobsThisMonthCount() : 4;
   const perJob = jobsPerMonth>0 ? totalFixed/jobsPerMonth : 0;
 
@@ -8719,7 +8752,7 @@ function renderBreakEven(){
         <div style="background:#f8fafc;border-radius:8px;padding:12px;text-align:center">
           <div style="font-size:11px;color:#64748b;text-transform:uppercase;font-weight:700;margin-bottom:4px">Fixed Costs</div>
           <div style="font-size:22px;font-weight:900;color:#ef4444">${fmt$(totalFixed)}</div>
-          <div style="font-size:10px;color:#94a3b8">overheads + wage + super</div>
+          <div style="font-size:10px;color:#94a3b8">overheads + monthly income target</div>
         </div>
         <div style="background:#f8fafc;border-radius:8px;padding:12px;text-align:center">
           <div style="font-size:11px;color:#64748b;text-transform:uppercase;font-weight:700;margin-bottom:4px">Hours to Cover</div>
@@ -8733,7 +8766,11 @@ function renderBreakEven(){
         </div>
       </div>
       <div style="background:#ecfdf5;border-radius:8px;padding:10px 14px;font-size:12px;color:#166534;font-weight:600">
-        ✓ Every dollar you invoice above ${fmt$(totalFixed)}/month is profit. Your minimum viable month is ${jobsNeeded} jobs.
+        ✓ Every dollar you invoice above ${fmt$(totalFixed)}/month is profit above your minimum target. Your minimum viable month is ${jobsNeeded} jobs.
+      </div>
+      <div style="margin-top:8px;padding:8px 12px;background:#f8fafc;border-radius:8px;font-size:11px;color:#64748b;line-height:2">
+        <strong style="color:#475569">Components: </strong>
+        Overheads <strong style="color:#0f172a">${fmt$(ohMonthly)}</strong> + Gross pay <strong style="color:#0f172a">${fmt$(wage)}</strong> + Super <strong style="color:#0f172a">${fmt$(superAmt)}</strong> = <strong style="color:#ef4444">${fmt$(totalFixed)}</strong>
       </div>
     </div>
   </div>`;
