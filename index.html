@@ -8404,7 +8404,8 @@ function convertQuoteToInvoice(jobId){
   j.type = 'SAI';
   j.invoiceNumber = jobNum('SAI', invNum);
   j.jobNumber = j.invoiceNumber;
-  j.invoiceAmount = j.quoteAmount;
+  const dep = Number(j.depositAmount) || 0;
+  j.invoiceAmount = (Number(j.quoteAmount) - dep).toFixed(2);
   j.status = 'invoiced';
   j.invoiceDate = today();
   const cfgDays = payTermsDays(CFG.invoicePaymentTerms||CFG.bizPaymentTerms, 7);
@@ -19762,7 +19763,35 @@ window.addEventListener('beforeunload', (e) => {
   updateAutoSaveStatus();
   // 5. Record session start for reminder
   _sessionStarted = Date.now();
+
+  // 6. Auto-Historical Repair: Clean up doubled totals or SAQ revenue flags
+  (function repairFinancials(){
+    let repaired = 0;
+    jobs.forEach(j => {
+      // Fix doubled totals: if invoiceAmount == quoteAmount but a deposit exists
+      const dep = Number(j.depositAmount) || 0;
+      const q = Number(j.quoteAmount) || 0;
+      const inv = Number(j.invoiceAmount) || 0;
+      if (dep > 0 && inv === q && q > 0) {
+        j.invoiceAmount = (q - dep).toFixed(2);
+        repaired++;
+      }
+      // Ensure SAQ jobs don't have revenue flags that might trip up older logic
+      if ((j.jobNumber || '').startsWith('SAQ') || j.type === 'SAQ') {
+        if (j.status === 'paid' || j.status === 'invoiced') {
+          // SAQs should generally be 'sent' or 'accepted', not 'invoiced'/'paid'
+          // but if they are, the jobRevenue helper now handles it. 
+          // We just ensure they don't have an invoiceAmount set.
+          if (j.invoiceAmount) { j.invoiceAmount = ''; repaired++; }
+        }
+      }
+    });
+    if (repaired > 0) {
+      save();
+      console.log(`[Repair] Fixed ${repaired} historical financial records.`);
+    }
+  })();
 })();
-</script><div id="toast-container" style="position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%); display: flex; flex-direction: column; gap: 8px; z-index: 99999; pointer-events: none;"></div><div id="toast-container" style="position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%); display: flex; flex-direction: column; gap: 8px; z-index: 99999; pointer-events: none;"></div><div id="toast-container" style="position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%); display: flex; flex-direction: column; gap: 8px; z-index: 99999; pointer-events: none;"></div><div id="toast-container" style="position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%); display: flex; flex-direction: column; gap: 8px; z-index: 99999; pointer-events: none;"></div><div id="toast-container" style="position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%); display: flex; flex-direction: column; gap: 8px; z-index: 99999; pointer-events: none;"></div><div id="toast-container" style="position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%); display: flex; flex-direction: column; gap: 8px; z-index: 99999; pointer-events: none;"></div><div id="toast-container" style="position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%); display: flex; flex-direction: column; gap: 8px; z-index: 99999; pointer-events: none;"></div>
+</script>
 
 <div id="toast-container" style="position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%); display: flex; flex-direction: column; gap: 8px; z-index: 99999; pointer-events: none;"></div><input type="file" accept="image/*" style="display: none;"><div class="calendly-frame-tag" manager_id="b04028b0-1a02-48db-b4be-72e32cafe2fd" id="b04028b0-1a02-48db-b4be-72e32cafe2fd" style="height: 0px; width: 0px; visibility: hidden;"></div><div class="calendly-lifecycle-optibutton_singleton"></div></body></html>
