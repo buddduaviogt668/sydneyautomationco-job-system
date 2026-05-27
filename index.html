@@ -2921,7 +2921,7 @@ function renderJobs(){
 
   const pipelineJobs = jobs.filter(j=>!['paid','lost','lead'].includes(j.status));
   const pipelineVal  = pipelineJobs.reduce((s,j)=>s+(Number(j.quoteAmount)||0),0);
-  const invVal       = jobs.filter(j=>['invoiced','overdue'].includes(j.status)).reduce((s,j)=>s+(Number(j.invoiceAmount)||0),0);
+  const invVal       = jobs.filter(j=>['invoiced','overdue'].includes(j.status)).reduce((s,j)=>s+jobRevenue(j),0);
   const paidVal      = jobs.filter(j=>j.status==='paid').reduce((s,j)=>s+jobRevenue(j),0);
   const ovCnt        = cnt.overdue||0;
 
@@ -3170,7 +3170,7 @@ function renderClients(){
           const cj    = jobs.filter(j=>j.clientId===c.id);
           const paid  = cTotalPaid(c.id);
           const active= cj.filter(j=>!['paid','lost'].includes(j.status)).length;
-          const owed  = cj.filter(j=>['invoiced','overdue'].includes(j.status)).reduce((s,j)=>s+(Number(j.invoiceAmount)||0),0);
+          const owed  = cj.filter(j=>['invoiced','overdue'].includes(j.status)).reduce((s,j)=>s+jobRevenue(j),0);
           const lastJ = cLastJob(c.id);
           const avBg  = cAvatarColor(c.company);
           const sys   = c.systemType&&SYS_C[c.systemType];
@@ -3228,11 +3228,13 @@ function renderClients(){
 }
 // ─── INVOICES ─────────────────────────────────────────────────────────────────
 function renderInvoices(){
-  const inv = jobs.filter(j=>['invoiced','overdue','paid'].includes(j.status)).sort((a,b)=>new Date(b.createdAt)-new Date(a.createdAt));
-  const outstanding = jobs.filter(j=>['invoiced','overdue'].includes(j.status)&&!(j.jobNumber||'').startsWith('SAQ')).reduce((s,j)=>s+jobRevenue(j),0);
-  const paid = jobs.filter(j=>j.status==='paid').reduce((s,j)=>s+jobRevenue(j),0);
-  const overdue = jobs.filter(j=>['invoiced','overdue'].includes(j.status)&&j.invoiceDue&&new Date(j.invoiceDue+'T00:00:00')<new Date()).length;
-  const total = jobs.filter(j=>['invoiced','overdue','paid'].includes(j.status)).reduce((s,j)=>s+jobRevenue(j),0);
+  const validJobs = jobs.filter(j=>!(j.jobNumber||'').startsWith('SAQ') && j.type!=='SAQ');
+  const inv = validJobs.filter(j=>['invoiced','overdue','paid'].includes(j.status)).sort((a,b)=>new Date(b.createdAt)-new Date(a.createdAt));
+  
+  const outstanding = validJobs.filter(j=>['invoiced','overdue'].includes(j.status)).reduce((s,j)=>s+jobRevenue(j),0);
+  const paid = validJobs.filter(j=>j.status==='paid').reduce((s,j)=>s+jobRevenue(j),0);
+  const overdue = validJobs.filter(j=>['invoiced','overdue'].includes(j.status)&&j.invoiceDue&&new Date(j.invoiceDue+'T00:00:00')<new Date()).length;
+  const total = validJobs.filter(j=>['invoiced','overdue','paid'].includes(j.status)).reduce((s,j)=>s+jobRevenue(j),0);
 
   return `<div style="padding:32px">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:24px;flex-wrap:wrap;gap:12px">
@@ -3259,19 +3261,19 @@ function renderInvoices(){
           const depAmt=Number(j.depositAmount)||0;
           const invAmt=Number(j.invoiceAmount)||0;
           const quoteAmt=Number(j.quoteAmount)||0;
-          // Deposit+balance job: show full context so the ledger makes sense
-          const isDepositJob = depAmt>0 && quoteAmt>0 && quoteAmt>invAmt;
+          const isDepositJob = depAmt>0 && invAmt>0;
+          const rev = jobRevenue(j);
           const amountCell = isDepositJob
             ? `<div>
-                <div style="font-size:14px;font-weight:700;color:#0f172a">${fmt$(invAmt)}</div>
+                <div style="font-size:14px;font-weight:700;color:#0f172a">${fmt$(rev)}</div>
                 <div style="font-size:10px;color:#10b981;font-weight:600;margin-top:1px">✓ dep ${fmt$(depAmt)} paid</div>
-                <div style="font-size:10px;color:#94a3b8">total ${fmt$(quoteAmt)}</div>
+                <div style="font-size:10px;color:#f97316;font-weight:600">bal ${fmt$(invAmt)}</div>
               </div>`
-            : `<div style="font-size:14px;font-weight:700">${fmt$(invAmt)}</div>`;
+            : `<div style="font-size:14px;font-weight:700">${fmt$(rev)}</div>`;
           return`<div style="display:grid;grid-template-columns:140px 1fr 130px 110px 120px 160px;padding:14px 16px;border-bottom:1px solid #f8fafc;align-items:center;background:${od?'#fff5f5':'transparent'}">
             <div>
               <div class="mono" style="font-size:12px;font-weight:600;color:#1e3a5f">${esc(j.invoiceNumber||j.jobNumber)}</div>
-              ${isDepositJob?`<div style="font-size:10px;color:#7c3aed;font-weight:600;margin-top:2px">Balance invoice</div>`:''}
+              ${isDepositJob?`<div style="font-size:10px;color:#7c3aed;font-weight:600;margin-top:2px">Split Payment</div>`:''}
             </div>
             <div>
               <div style="font-size:14px;font-weight:600">${esc(c?.company||'—')}</div>
@@ -5273,7 +5275,7 @@ function renderClientDetail(id){
   const c=clients.find(x=>x.id===id); if(!c) return;
   const cj    = jobs.filter(j=>j.clientId===c.id).sort((a,b)=>new Date(b.createdAt)-new Date(a.createdAt));
   const paid  = cTotalPaid(c.id);
-  const owed  = cj.filter(j=>['invoiced','overdue'].includes(j.status)).reduce((s,j)=>s+(Number(j.invoiceAmount)||0),0);
+  const owed  = cj.filter(j=>['invoiced','overdue'].includes(j.status)).reduce((s,j)=>s+jobRevenue(j),0);
   const active= cj.filter(j=>!['paid','lost'].includes(j.status)).length;
   const qJobs = cj.filter(j=>j.type==='SAQ');
   const wonQ  = qJobs.filter(j=>['approved','work_order','scheduled','invoiced','paid'].includes(j.status)).length;
@@ -6547,6 +6549,82 @@ function exportSupplierOrdersCSV(){
   const blob=new Blob([csv],{type:'text/csv'});const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=`supplier_orders_${today()}.csv`;a.click();
 }
 
+function runComprehensiveAudit() {
+  const issues = [];
+  
+  // 1. Check jobs for discrepancies
+  jobs.forEach(j => {
+    const isSaq = (j.jobNumber || '').startsWith('SAQ') || j.type === 'SAQ';
+    const dep = Number(j.depositAmount) || 0;
+    const inv = Number(j.invoiceAmount) || 0;
+    const quote = Number(j.quoteAmount) || 0;
+    const totalRev = jobRevenue(j);
+
+    if (!isSaq) {
+      if (j.status === 'paid' && totalRev === 0 && quote === 0) {
+        issues.push({ type: 'Job', id: j.id, ref: j.jobNumber, desc: 'Status is paid but no revenue is recorded (quote, deposit, or invoice amounts missing).' });
+      }
+      
+      if (['invoiced', 'paid'].includes(j.status)) {
+        if (dep > 0 && inv > 0 && Math.abs((dep + inv) - quote) > 0.05) {
+          issues.push({ type: 'Job', id: j.id, ref: j.jobNumber, desc: `Deposit (${fmt$(dep)}) + Invoice Balance (${fmt$(inv)}) does not equal Quote Amount (${fmt$(quote)}).` });
+        }
+        if (dep > quote) {
+          issues.push({ type: 'Job', id: j.id, ref: j.jobNumber, desc: `Deposit (${fmt$(dep)}) is greater than Quote Amount (${fmt$(quote)}).` });
+        }
+      }
+    }
+  });
+
+  // 2. Check duplicate job numbers
+  const jobNums = {};
+  jobs.forEach(j => {
+    if (j.jobNumber) {
+      if (jobNums[j.jobNumber]) issues.push({ type: 'Job', id: j.id, ref: j.jobNumber, desc: `Duplicate job number found.` });
+      jobNums[j.jobNumber] = true;
+    }
+  });
+
+  // 3. Check supplier invoices without valid job refs
+  const supInvoices = window._supInvoices || [];
+  supInvoices.forEach(i => {
+    if (i.jobRef) {
+      const match = jobs.find(j => j.jobNumber === i.jobRef || j.id === i.jobId);
+      if (!match) {
+        issues.push({ type: 'Supplier Invoice', id: i.id, ref: i.invoiceNumber || 'Unknown', desc: `Linked to job '${i.jobRef}', but this job does not exist.` });
+      }
+    }
+  });
+
+  document.getElementById('modal-title').textContent = 'Comprehensive Data Audit';
+  document.getElementById('modal-box').style.maxWidth = '800px';
+  document.getElementById('modal-body').innerHTML = `
+    <div style="background:#fff1f2;border:1px solid #fecdd3;border-radius:12px;padding:20px;margin-bottom:20px">
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px">
+        <span style="font-size:20px">🔍</span>
+        <div style="font-size:16px;font-weight:800;color:#9f1239">Audit Results: ${issues.length} Issues Found</div>
+      </div>
+      <div style="font-size:13px;color:#be123c;margin-bottom:16px">
+        We scanned all jobs, quotes, and supplier invoices for mathematical discrepancies, duplicate numbers, and missing references.
+      </div>
+      <div style="max-height: 400px; overflow-y: auto; display:grid;gap:8px; padding-right: 8px;">
+        ${issues.length === 0 ? '<div style="color:#10b981;font-weight:700;">All clear! No data discrepancies found.</div>' : 
+          issues.map(iss => `
+          <div style="background:#fff;border-radius:8px;padding:12px;border:1px solid #fda4af;display:flex;justify-content:space-between;align-items:center">
+            <div>
+              <div style="font-size:11px;font-weight:800;color:#f43f5e;text-transform:uppercase;margin-bottom:4px">${iss.type}</div>
+              <div style="font-size:14px;font-weight:700;color:#9f1239;margin-bottom:4px">${iss.ref || 'Unknown'}</div>
+              <div style="font-size:12px;color:#be123c">${iss.desc}</div>
+            </div>
+            ${iss.type === 'Job' ? `<button onclick="closeModal(); setTimeout(()=>openModal('jobDetail', '${iss.id}'), 100)" style="background:#be123c;color:#fff;border:none;border-radius:6px;padding:6px 12px;font-size:12px;font-weight:700;cursor:pointer">Fix Job</button>` : ''}
+          </div>
+        `).join('')}
+      </div>
+    </div>
+  `;
+  openModal('_custom');
+}
+
 // ─── FINANCIALS SCREEN ────────────────────────────────────────────────────────
 function drawFinancialCharts(){
   var monthData = window._fcData||[];
@@ -7029,11 +7107,40 @@ function renderFinancials(){
     return Math.abs((dep + inv) - quote) > 0.05; // flag if >5c discrepancy
   });
 
-  return `<div style="padding:32px">
+  const mismatchHtml = splitMismatch.length > 0 ? `
+    <div style="background:#fff1f2;border:1px solid #fecdd3;border-radius:12px;padding:20px;margin-bottom:20px">
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px">
+        <span style="font-size:20px">⚠️</span>
+        <div style="font-size:16px;font-weight:800;color:#9f1239">Financial Discrepancies Detected</div>
+      </div>
+      <div style="font-size:13px;color:#be123c;margin-bottom:12px">
+        The following paid jobs have a discrepancy where (Deposit + Invoice Balance) does not equal the Total Quote Amount. This may cause revenue double-ups.
+      </div>
+      <div style="display:grid;gap:8px">
+        ${splitMismatch.map(j => `
+          <div style="background:#fff;border-radius:8px;padding:12px;border:1px solid #fda4af;display:flex;justify-content:space-between;align-items:center">
+            <div>
+              <div style="font-size:14px;font-weight:700;color:#9f1239">${j.jobNumber || 'Unknown Job'}</div>
+              <div style="font-size:12px;color:#e11d48">${j.clientName || ''}</div>
+            </div>
+            <div style="text-align:right;margin-right:16px">
+              <div style="font-size:11px;color:#be123c;font-weight:600">Quote: ${fmt$(j.quoteAmount)}</div>
+              <div style="font-size:11px;color:#be123c">Dep: ${fmt$(j.depositAmount)} + Inv: ${fmt$(j.invoiceAmount)} = <strong>${fmt$(Number(j.depositAmount||0) + Number(j.invoiceAmount||0))}</strong></div>
+            </div>
+            <button onclick="openModal('jobDetail', '${j.id}')" style="background:#be123c;color:#fff;border:none;border-radius:6px;padding:6px 12px;font-size:12px;font-weight:700;cursor:pointer">Fix Job</button>
+          </div>
+        `).join('')}
+      </div>
+    </div>
+  ` : '';
+
+  return \`<div style="padding:32px">
+    \${mismatchHtml}
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:24px;flex-wrap:wrap;gap:12px">
       <h1 style="font-size:26px;font-weight:800">Financials</h1>
       <div style="display:flex;gap:8px">
         <button onclick="aiAsk('Analyse my financial position. What is my current gross margin? Am I pricing correctly for my overhead recovery? Where are the biggest leaks in profitability? Give me specific actions to improve margin in the next 30 days.')" class="ai-section-btn">✦ AI Financial Review</button>
+      <button onclick="runComprehensiveAudit()" style="background:#be123c;color:#fff;border:none;border-radius:8px;padding:9px 16px;font-size:13px;font-weight:700;cursor:pointer">🔍 Run Data Audit</button>
       <button onclick="goto('profit')" style="background:#6366f1;color:#fff;border:none;border-radius:8px;padding:9px 16px;font-size:13px;font-weight:700;cursor:pointer">📊 Profitability Report</button>
       <button onclick="exportToXero()" style="background:#00B9AE;color:#fff;border:none;border-radius:8px;padding:9px 16px;font-size:13px;font-weight:700;cursor:pointer">⬇ Export Xero CSV</button>
       <button onclick="exportToMyob()" style="background:#4a2d8f;color:#fff;border:none;border-radius:8px;padding:9px 16px;font-size:13px;font-weight:700;cursor:pointer">⬇ Export MYOB CSV</button>
@@ -7345,7 +7452,7 @@ function renderQuoteBuilderModal(jobId){
     }
     window._qbJobId=jobId;
   }
-  document.getElementById('modal-title').innerHTML = 'Quote Builder — '+j.jobNumber+' <span style="font-size:13px;font-weight:500">'+tierBadgeHTML(j.clientId)+'</span> <button onclick="openQuoteTemplates(\''+jobId+'\')" style="margin-left:12px;background:#6366f1;color:#fff;border:none;border-radius:7px;padding:5px 12px;font-size:12px;font-weight:700;cursor:pointer">⚡ Templates</button>';
+  document.getElementById('modal-title').innerHTML = 'Quote Builder — '+j.jobNumber+' <span style="font-size:13px;font-weight:500">'+tierBadgeHTML(j.clientId)+'</span> <button onclick="openQuoteTemplates(\''+jobId+'\')" style="margin-left:12px;background:#6366f1;color:#fff;border:none;border-radius:7px;padding:5px 12px;font-size:12px;font-weight:700;cursor:pointer">⚡ Templates</button> <button onclick="openVisualQuote(\''+jobId+'\')" style="margin-left:6px;background:#1e2d4e;color:#fff;border:2px solid #f5821f;border-radius:7px;padding:5px 12px;font-size:12px;font-weight:700;cursor:pointer" title="Open professional printable quote">🖨 Visual Quote</button>';
   document.getElementById('modal-box').style.maxWidth='860px';
 
   // Cost calculations
@@ -7520,7 +7627,10 @@ function renderQuoteBuilderModal(jobId){
           
         </div>
 
-        <button onclick="qbSave('${jobId}')" style="background:#10b981;color:#fff;border:none;border-radius:8px;padding:12px;font-size:14px;font-weight:700;cursor:pointer;width:100%">Save Quote ${fmt$(total)} to ${j.jobNumber}</button>
+        <div style="display:flex;gap:8px;margin-top:0">
+          <button onclick="qbSave('${jobId}')" style="background:#10b981;color:#fff;border:none;border-radius:8px;padding:12px;font-size:14px;font-weight:700;cursor:pointer;flex:1">💾 Save ${fmt$(total)} to ${j.jobNumber}</button>
+          <button onclick="openVisualQuote('${jobId}')" style="background:#1e2d4e;color:#fff;border:none;border-radius:8px;padding:12px;font-size:14px;font-weight:700;cursor:pointer;flex:1;border:2px solid #f5821f" title="Open professional printable quote">🖨 Visual Quote</button>
+        </div>
       </div>
     </div>`;
 }
@@ -7555,7 +7665,477 @@ function qbSave(jobId){
 }
 
 
-// ─── STANDALONE QUOTES SECTION ─────────────────────────────────────────────
+// ─── VISUAL QUOTE (SAC TEMPLATE v3) ──────────────────────────────────────────
+// Opens a full-screen overlay with the professional SAC Quote template.
+// Parts are inserted at RAW COST (no margin) so user can manually set prices.
+// All fields are editable. Data is saved back to j.quoteData on "Save to Job".
+
+function openVisualQuote(jobId) {
+  const j = jobs.find(x => x.id === jobId);
+  if (!j) return;
+  const c = gc(j.clientId);
+
+  // Build initial items from QB if available, otherwise from j.quoteData
+  let initItems = [];
+  if (QB.items && QB.items.length > 0) {
+    // QB items — use raw cost, no margin, so user can set their own price
+    let idx = 1;
+    // Parts rows
+    QB.items.forEach(item => {
+      const p = PARTS_DB.find(x => x.id === item.partId) || {};
+      const rawCost = partYourCost(p);
+      const desc = (p.partNumber ? p.partNumber + ' – ' : '') + (p.description || '');
+      initItems.push({ num: (idx++) + '.', desc, qty: String(item.qty), unit: '', amount: '' });
+    });
+    // Labour rows
+    QB.labour.forEach(l => {
+      initItems.push({ num: (idx++) + '.', desc: l.desc, qty: String(l.hours), unit: String(l.rate), amount: '' });
+    });
+    // Callout row if non-zero
+    if (QB.callout > 0) {
+      initItems.push({ num: (idx++) + '.', desc: 'Callout / Site Visit', qty: '1', unit: '', amount: '' });
+    }
+  }
+
+  // Load persisted quoteData if it exists
+  const savedData = j.quoteData || null;
+
+  // Build default data for the visual quote
+  const today = new Date().toISOString().split('T')[0];
+  const valid30 = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+  const quoteRefNum = (j.jobNumber || 'SAQ_').replace('SAI_', 'SAQ_').replace('SAQ_', 'SAQ_');
+
+  const defaults = {
+    quoteRef: savedData?.quoteRef || quoteRefNum,
+    clientName: savedData?.clientName || (c ? c.name : ''),
+    clientContact: savedData?.clientContact || (c ? (c.contact || '') : ''),
+    clientSite: savedData?.clientSite || (j.siteAddress || j.address || ''),
+    clientPhone: savedData?.clientPhone || (c ? (c.phone || '') : ''),
+    clientEmail: savedData?.clientEmail || (c ? (c.email || '') : ''),
+    jobRef: savedData?.jobRef || (j.jobNumber || ''),
+    siteDate: savedData?.siteDate || (j.date || ''),
+    quoteDate: savedData?.quoteDate || today,
+    validDate: savedData?.validDate || valid30,
+    scopeText: savedData?.scopeText || (j.description || j.scope || ''),
+    items: savedData?.items || (initItems.length > 0 ? initItems : [{ num: '1.', desc: '', qty: '', unit: '', amount: '' }]),
+    gstAmt: savedData?.gstAmt || '$0.00',
+    grandTotal: savedData?.grandTotal || (j.quoteAmount ? ('$' + Number(j.quoteAmount).toLocaleString('en-AU', { minimumFractionDigits: 2, maximumFractionDigits: 2 })) : ''),
+    quoteNotes: savedData?.quoteNotes || '',
+    exclusionsText: savedData?.exclusionsText || `– All 240V mains wiring, switchboard works, or fixed electrical installation — to be carried out by a licensed electrical contractor\n– Supply or replacement of light fittings, lamps, LED drivers, or transformers\n– Structural, plastering, painting, or making-good works following device removal or installation\n– Third-party system integrations (AV, HVAC, security, intercom) unless separately scoped and agreed in writing\n– Any programming or scene changes requested after commissioning sign-off — chargeable at $140.00/hr, 3-hour minimum\n– Any works arising from discovery of pre-existing electrical faults or non-compliant wiring — reported immediately and quoted as a variation`,
+    termsText: savedData?.termsText || `1. This business is not registered for GST. No GST is charged.\n2. This quote is valid for 30 days from the date of issue. Pricing is subject to change in the event of a supplier price increase prior to order placement.\n3. A 50% deposit is required prior to ordering materials. 40% on practical completion. 10% on final commissioning sign-off and client handover.\n4. Call-back and variation rates: Standard $140.00/hr (min. 3 hrs / $420.00 per visit). After-hours and weekend $210.00/hr. Emergency same-day $280.00/hr. All variations require written approval before proceeding.\n5. All variations to the agreed scope must be approved in writing before works commence. Verbal instructions will not be acted upon.\n6. All work is guaranteed for 12 months from date of practical completion. Manufacturer warranty applies separately to all supplied hardware.\n7. Queries must be raised within 7 days of invoice date.`,
+    payBank: savedData?.payBank || `Account Name: George Skarmoutsos\nBSB: 032-112\nAccount No: 374396\nReference: ${quoteRefNum}`,
+    payPayID: savedData?.payPayID || `61 136 364 150\nInstant bank-to-bank payment`,
+    payCard: savedData?.payCard || `https://buy.stripe.com/5kQ00i8o96rQ72R6`,
+    footerLine: savedData?.footerLine || `Thank you for your business. service@sydneyautomationco.com.au | 0422 469 739`
+  };
+
+  // Remove existing overlay
+  const existing = document.getElementById('vq-overlay');
+  if (existing) existing.remove();
+
+  // Create the full-screen overlay
+  const overlay = document.createElement('div');
+  overlay.id = 'vq-overlay';
+  overlay.style.cssText = 'position:fixed;inset:0;z-index:99999;background:#c8cdd8;overflow-y:auto;font-family:sans-serif';
+
+  overlay.innerHTML = `
+  <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@700;800&family=Barlow:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    #vq-overlay * { box-sizing: border-box; margin: 0; padding: 0; }
+    #vq-overlay { font-family: 'Barlow', sans-serif; }
+    /* TOOLBAR */
+    #vq-toolbar {
+      max-width: 860px; margin: 0 auto 14px; display: flex; gap: 8px; flex-wrap: wrap;
+      align-items: center; padding: 16px 0 0;
+    }
+    #vq-tlabel { font-family: 'Barlow Condensed', sans-serif; font-size: 12px; font-weight: 700;
+      letter-spacing: .12em; text-transform: uppercase; color: #555; margin-right: auto; }
+    .vq-btn { font-family: 'Barlow Condensed', sans-serif; font-size: 11px; font-weight: 700;
+      letter-spacing: .08em; text-transform: uppercase; padding: 8px 18px; border: none;
+      border-radius: 4px; cursor: pointer; transition: opacity .15s; }
+    .vq-btn:hover { opacity: .82; }
+    .vq-btn-save   { background: #10b981; color: #fff; }
+    .vq-btn-print  { background: #1e2d4e; color: #fff; }
+    .vq-btn-new    { background: #fff; color: #1e2d4e; border: 1.5px solid #d8dde6; }
+    .vq-btn-close  { background: #ef4444; color: #fff; }
+    /* QUOTE SHEET */
+    #vq-quote { max-width: 860px; margin: 0 auto 48px; background: #fff;
+      box-shadow: 0 4px 28px rgba(30,45,78,.18); }
+    /* Reuse SAC template CSS vars */
+    #vq-overlay { --navy:#1e2d4e; --navy-light:#253560; --orange:#f5821f; --white:#fff;
+      --steel:#a8bdd4; --bg:#f2f4f7; --border:#d8dde6; --text:#1e2d4e; --muted:#6b7a94;
+      --row-alt:#f7f8fa; }
+    /* HEADER */
+    .vq-header { background: #1e2d4e; padding: 0; display: grid;
+      grid-template-columns: 1fr auto; align-items: stretch; }
+    .vq-header-brand { padding: 26px 36px 22px; border-bottom: 3px solid #f5821f; }
+    .vq-brand-name { font-family: 'Barlow Condensed', sans-serif; font-size: 28px;
+      font-weight: 800; letter-spacing: .04em; text-transform: uppercase; color: #fff; line-height: 1; }
+    .vq-orange-rule { height: 3px; background: #f5821f; margin: 7px 0 8px; width: 100%; }
+    .vq-brand-sub { font-size: 10px; font-weight: 400; letter-spacing: .28em;
+      text-transform: uppercase; color: #a8bdd4; }
+    .vq-header-contact { padding: 26px 36px 22px; text-align: right; display: flex;
+      flex-direction: column; justify-content: center; gap: 3px;
+      border-left: 1px solid rgba(255,255,255,.08); min-width: 240px; }
+    .vq-header-contact input { background: transparent; border: none;
+      border-bottom: 1px dashed rgba(255,255,255,.15); color: #a8bdd4;
+      font-size: 11.5px; text-align: right; outline: none; padding: 1px 0; width: 100%; display: block; }
+    .vq-header-contact input:focus { border-bottom-color: #f5821f; color: #fff; }
+    /* TITLE BAR */
+    .vq-title-bar { background: #253560; padding: 12px 36px; display: flex;
+      justify-content: space-between; align-items: center; border-bottom: 2px solid #f5821f; }
+    .vq-q-word { font-family: 'Barlow Condensed', sans-serif; font-size: 20px; font-weight: 800;
+      letter-spacing: .15em; text-transform: uppercase; color: #fff; }
+    .vq-refbox { display: flex; align-items: center; gap: 10px; }
+    .vq-refbox label { font-family: 'Barlow Condensed', sans-serif; font-size: 10px; font-weight: 700;
+      letter-spacing: .15em; text-transform: uppercase; color: #a8bdd4; }
+    .vq-refbox input { font-family: 'Barlow Condensed', sans-serif; font-size: 16px; font-weight: 700;
+      letter-spacing: .08em; color: #f5821f; background: transparent; border: none;
+      border-bottom: 1.5px solid rgba(245,130,31,.4); outline: none; padding: 1px 0;
+      width: 160px; text-align: right; }
+    /* FOR / DETAILS */
+    .vq-for-details { display: grid; grid-template-columns: 1fr 1fr; border-bottom: 1px solid #d8dde6; }
+    .vq-col { padding: 20px 36px; }
+    .vq-col:first-child { border-right: 1px solid #d8dde6; }
+    .vq-col-label { font-family: 'Barlow Condensed', sans-serif; font-size: 9px; font-weight: 700;
+      letter-spacing: .22em; text-transform: uppercase; color: #1e2d4e; border-bottom: 2px solid #f5821f;
+      padding-bottom: 5px; margin-bottom: 12px; display: inline-block; }
+    .vq-ef { font-size: 13.5px; font-weight: 600; color: #1e2d4e; border: none; outline: none;
+      background: transparent; width: 100%; padding: 0; resize: none; line-height: 1.55; display: block; }
+    .vq-ef.sub { font-size: 12.5px; font-weight: 400; color: #6b7a94; margin-top: 3px; }
+    .vq-ef:focus { color: #1e2d4e; }
+    .vq-det-grid { display: grid; grid-template-columns: auto 1fr; gap: 5px 14px; align-items: baseline; }
+    .vq-det-key { font-size: 11px; font-weight: 600; color: #6b7a94; white-space: nowrap; }
+    .vq-det-val { font-size: 12px; font-weight: 500; color: #1e2d4e; border: none;
+      border-bottom: 1px dashed transparent; outline: none; background: transparent; padding: 1px 0; width: 100%; }
+    .vq-det-val:focus { border-bottom-color: #f5821f; }
+    /* SCOPE */
+    .vq-scope { padding: 16px 36px; background: #f7f8fa; border-bottom: 1px solid #d8dde6; }
+    .vq-scope textarea { width: 100%; font-size: 13px; line-height: 1.65; color: #1e2d4e;
+      border: none; outline: none; background: transparent; resize: none; min-height: 40px; margin-top: 8px; }
+    /* TABLE */
+    .vq-table { width: 100%; border-collapse: collapse; }
+    .vq-thead th { background: #1e2d4e; color: #fff; font-family: 'Barlow Condensed', sans-serif;
+      font-size: 9.5px; font-weight: 700; letter-spacing: .18em; text-transform: uppercase;
+      padding: 10px; text-align: left; border-right: 1px solid rgba(255,255,255,.07); }
+    .vq-thead th:first-child { padding-left: 36px; width: 38px; }
+    .vq-thead th:last-child { padding-right: 36px; text-align: right; border-right: none; }
+    .vq-thead th:nth-child(3), .vq-thead th:nth-child(4) { text-align: center; width: 72px; }
+    .vq-thead th:nth-child(5) { text-align: right; width: 100px; }
+    .vq-irow td { vertical-align: top; padding: 13px 10px; border-bottom: 1px solid #d8dde6;
+      font-size: 13px; line-height: 1.5; color: #1e2d4e; }
+    .vq-irow:nth-child(even) td { background: #f7f8fa; }
+    .vq-irow td:first-child { padding-left: 36px; font-family: 'Barlow Condensed', sans-serif;
+      font-weight: 700; font-size: 12px; color: #f5821f; white-space: nowrap; }
+    .vq-irow td:last-child { padding-right: 36px; text-align: right; font-weight: 600; white-space: nowrap; }
+    .vq-irow td:nth-child(3), .vq-irow td:nth-child(4) { text-align: center; }
+    .vq-td-ta { font-size: 13px; color: #1e2d4e; border: none; outline: none;
+      background: transparent; width: 100%; padding: 0; resize: none; line-height: 1.55; }
+    .vq-td-in { font-size: 13px; color: #1e2d4e; border: none; outline: none;
+      background: transparent; text-align: inherit; width: 100%; }
+    .vq-td-num { font-family: 'Barlow Condensed', sans-serif; font-size: 12px; font-weight: 700;
+      color: #f5821f; border: none; outline: none; background: transparent; width: 28px; text-align: center; }
+    .vq-add-row td { padding: 10px 36px; background: #f0f2f6; border-bottom: 2px solid #1e2d4e; }
+    .vq-btn-sm { font-family: 'Barlow Condensed', sans-serif; font-size: 10px; font-weight: 700;
+      letter-spacing: .06em; text-transform: uppercase; padding: 5px 12px;
+      border: 1.5px dashed #d8dde6; border-radius: 3px; background: none; color: #6b7a94;
+      cursor: pointer; margin-right: 8px; transition: all .15s; }
+    .vq-btn-sm:hover { border-color: #f5821f; color: #1e2d4e; }
+    /* TOTALS */
+    .vq-totals { display: flex; justify-content: flex-end; padding: 0 36px; border-bottom: 1px solid #d8dde6; }
+    .vq-tot-inner { min-width: 270px; padding: 14px 0; }
+    .vq-t-row { display: flex; justify-content: space-between; align-items: center; gap: 40px;
+      padding: 5px 0; font-size: 13px; color: #6b7a94; border-bottom: 1px solid #d8dde6; }
+    .vq-t-row:last-child { border-bottom: none; }
+    .vq-t-row.grand { font-family: 'Barlow Condensed', sans-serif; font-size: 17px; font-weight: 800;
+      letter-spacing: .05em; text-transform: uppercase; color: #1e2d4e; border-top: 2px solid #1e2d4e;
+      margin-top: 6px; padding-top: 10px; border-bottom: none; }
+    .vq-t-val { font-size: 13px; font-weight: 600; color: #1e2d4e; border: none; outline: none;
+      background: transparent; text-align: right; width: 110px; }
+    .vq-t-row.grand .vq-t-val { font-family: 'Barlow Condensed', sans-serif; font-size: 17px;
+      font-weight: 800; color: #f5821f; }
+    /* NOTES */
+    .vq-notes { padding: 16px 36px; background: #f7f8fa; border-bottom: 1px solid #d8dde6; }
+    .vq-notes textarea { width: 100%; font-size: 13px; line-height: 1.65; color: #1e2d4e;
+      border: none; outline: none; background: transparent; resize: none; min-height: 36px; margin-top: 8px; }
+    /* PAYMENT */
+    .vq-payment { padding: 16px 36px; border-bottom: 1px solid #d8dde6; }
+    .vq-pay-grid { display: grid; grid-template-columns: repeat(3,1fr); gap: 14px; }
+    .vq-pay-box { border: 1px solid #d8dde6; border-top: 2px solid #f5821f;
+      border-radius: 3px; padding: 12px 14px; background: #f7f8fa; }
+    .vq-pay-title { font-family: 'Barlow Condensed', sans-serif; font-size: 9.5px; font-weight: 700;
+      letter-spacing: .15em; text-transform: uppercase; color: #1e2d4e; margin-bottom: 8px; }
+    .vq-pay-ta { width: 100%; font-size: 12px; color: #6b7a94; border: none; outline: none;
+      background: transparent; resize: none; padding: 0; line-height: 1.65; }
+    /* EXCLUSIONS */
+    .vq-extc { display: grid; grid-template-columns: 1fr 1fr; border-bottom: 1px solid #d8dde6; }
+    .vq-excol { padding: 16px 36px; }
+    .vq-excol:first-child { border-right: 1px solid #d8dde6; }
+    .vq-excol textarea { width: 100%; font-size: 12px; line-height: 1.72; color: #6b7a94;
+      border: none; outline: none; background: transparent; resize: none; min-height: 90px; }
+    /* FOOTER */
+    .vq-footer { background: #1e2d4e; padding: 14px 36px; display: flex;
+      align-items: center; justify-content: center; border-top: 3px solid #f5821f; }
+    .vq-footer input { background: transparent; border: none; border-bottom: 1px dashed rgba(255,255,255,.15);
+      color: #a8bdd4; font-family: 'Barlow Condensed', sans-serif; font-size: 11px;
+      font-weight: 400; letter-spacing: .1em; text-transform: uppercase; text-align: center;
+      outline: none; padding: 0 0 1px; width: 100%; max-width: 520px; }
+    /* PRINT */
+    @media print {
+      #vq-toolbar { display: none !important; }
+      #vq-overlay { background: #fff !important; padding: 0 !important; position: static !important; }
+      .vq-add-row { display: none !important; }
+      .vq-btn-sm { display: none !important; }
+      * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; color-adjust: exact !important; }
+    }
+  </style>
+
+  <div id="vq-toolbar">
+    <span id="vq-tlabel">SAC · Visual Quote — ${j.jobNumber}</span>
+    <button class="vq-btn vq-btn-new" onclick="vqAddRow()">＋ Add Row</button>
+    <button class="vq-btn vq-btn-save" onclick="vqSaveToJob('${jobId}')">💾 Save to Job</button>
+    <button class="vq-btn vq-btn-print" onclick="window.print()">🖨 Print / PDF</button>
+    <button class="vq-btn vq-btn-close" onclick="document.getElementById('vq-overlay').remove()">✕ Close</button>
+  </div>
+
+  <div id="vq-quote">
+    <!-- HEADER -->
+    <div class="vq-header">
+      <div class="vq-header-brand">
+        <div class="vq-brand-name">Sydney Automation Co.</div>
+        <div class="vq-orange-rule"></div>
+        <div class="vq-brand-sub">L I G H T I N G &nbsp; C O N T R O L &nbsp; S P E C I A L I S T S</div>
+      </div>
+      <div class="vq-header-contact">
+        <input id="vqABN" value="ABN: 61 136 364 150 · 0422 469 739" />
+        <input id="vqEmail" value="service@sydneyautomationco.com.au" />
+      </div>
+    </div>
+
+    <!-- TITLE BAR -->
+    <div class="vq-title-bar">
+      <div class="vq-q-word">Quote</div>
+      <div class="vq-refbox">
+        <label>Ref</label>
+        <input id="vqRef" value="" oninput="vqSyncRef(this.value)" />
+      </div>
+    </div>
+
+    <!-- FOR / DETAILS -->
+    <div class="vq-for-details">
+      <div class="vq-col">
+        <span class="vq-col-label">Quote For</span>
+        <textarea class="vq-ef" id="vqClientName" rows="1" oninput="vqAr(this)" placeholder="Client / company name..."></textarea>
+        <textarea class="vq-ef sub" id="vqClientContact" rows="1" oninput="vqAr(this)" placeholder="Contact name..."></textarea>
+        <textarea class="vq-ef sub" id="vqClientSite" rows="1" oninput="vqAr(this)" placeholder="Site address..."></textarea>
+        <textarea class="vq-ef sub" id="vqClientPhone" rows="1" oninput="vqAr(this)" placeholder="Phone..."></textarea>
+        <textarea class="vq-ef sub" id="vqClientEmail" rows="1" oninput="vqAr(this)" placeholder="Email..."></textarea>
+      </div>
+      <div class="vq-col">
+        <span class="vq-col-label">Details</span>
+        <div class="vq-det-grid">
+          <span class="vq-det-key">Job Ref</span>     <input class="vq-det-val" id="vqJobRef" value="" placeholder="SAI_100051" />
+          <span class="vq-det-key">Quote Ref</span>   <input class="vq-det-val" id="vqRef2" value="" />
+          <span class="vq-det-key">Site Date</span>   <input class="vq-det-val" id="vqSiteDate" type="date" />
+          <span class="vq-det-key">Date</span>        <input class="vq-det-val" id="vqDate" type="date" />
+          <span class="vq-det-key">Valid Until</span> <input class="vq-det-val" id="vqValidDate" type="date" />
+        </div>
+      </div>
+    </div>
+
+    <!-- SCOPE -->
+    <div class="vq-scope">
+      <span class="vq-col-label">Scope of Work</span>
+      <textarea id="vqScope" oninput="vqAr(this)" placeholder="Describe the scope of work..."></textarea>
+    </div>
+
+    <!-- TABLE -->
+    <table class="vq-table">
+      <thead class="vq-thead">
+        <tr>
+          <th>#</th>
+          <th>Description</th>
+          <th>Qty</th>
+          <th>Unit ($)</th>
+          <th>Amount ($)</th>
+        </tr>
+      </thead>
+      <tbody id="vqItemsBody"></tbody>
+    </table>
+
+    <!-- TOTALS -->
+    <div class="vq-totals">
+      <div class="vq-tot-inner">
+        <div class="vq-t-row">
+          <span>GST (Not registered)</span>
+          <input class="vq-t-val" id="vqGST" value="$0.00" />
+        </div>
+        <div class="vq-t-row grand">
+          <span>Total Due</span>
+          <input class="vq-t-val" id="vqTotal" value="" placeholder="$0.00" />
+        </div>
+      </div>
+    </div>
+
+    <!-- NOTES -->
+    <div class="vq-notes">
+      <span class="vq-col-label">Additional Notes</span>
+      <textarea id="vqNotes" oninput="vqAr(this)" placeholder="Any additional notes for the client..."></textarea>
+    </div>
+
+    <!-- PAYMENT -->
+    <div class="vq-payment">
+      <span class="vq-col-label" style="display:block;margin-bottom:12px">Payment</span>
+      <div class="vq-pay-grid">
+        <div class="vq-pay-box">
+          <div class="vq-pay-title">■ Bank Transfer</div>
+          <textarea class="vq-pay-ta" id="vqPayBank" rows="4" oninput="vqAr(this)"></textarea>
+        </div>
+        <div class="vq-pay-box">
+          <div class="vq-pay-title">■ PayID (Instant)</div>
+          <textarea class="vq-pay-ta" id="vqPayID" rows="4" oninput="vqAr(this)"></textarea>
+        </div>
+        <div class="vq-pay-box">
+          <div class="vq-pay-title">■ Card Payment</div>
+          <textarea class="vq-pay-ta" id="vqPayCard" rows="4" oninput="vqAr(this)"></textarea>
+        </div>
+      </div>
+    </div>
+
+    <!-- EXCLUSIONS + T&C -->
+    <div class="vq-extc">
+      <div class="vq-excol">
+        <span class="vq-col-label" style="display:block;margin-bottom:8px">Exclusions</span>
+        <textarea id="vqExclusions" oninput="vqAr(this)"></textarea>
+      </div>
+      <div class="vq-excol">
+        <span class="vq-col-label" style="display:block;margin-bottom:8px">Terms &amp; Conditions</span>
+        <textarea id="vqTerms" oninput="vqAr(this)"></textarea>
+      </div>
+    </div>
+
+    <!-- FOOTER -->
+    <div class="vq-footer">
+      <input id="vqFooter" value="" />
+    </div>
+  </div>
+  `;
+
+  document.body.appendChild(overlay);
+
+  // ── VQ HELPERS ───────────────────────────────────────────────────────
+  window.vqAr = function(el) { el.style.height = 'auto'; el.style.height = el.scrollHeight + 'px'; };
+  window.vqSyncRef = function(v) {
+    const r2 = document.getElementById('vqRef2'); if (r2) r2.value = v;
+    const pb = document.getElementById('vqPayBank');
+    if (pb) { pb.value = pb.value.replace(/Reference: .+/, 'Reference: ' + v); vqAr(pb); }
+  };
+
+  window.vqRenderItems = function(items) {
+    const tbody = document.getElementById('vqItemsBody');
+    if (!tbody) return;
+    tbody.innerHTML = '';
+    items.forEach((item, i) => {
+      const tr = document.createElement('tr');
+      tr.className = 'vq-irow';
+      tr.innerHTML = `
+        <td><input class="vq-td-num" value="${(item.num || ((i + 1) + '.')).replace(/"/g,'&quot;')}" /></td>
+        <td><textarea class="vq-td-ta" rows="2" oninput="vqAr(this)">${(item.desc || '').replace(/</g,'&lt;')}</textarea></td>
+        <td><input class="vq-td-in" style="text-align:center;width:60px" value="${(item.qty || '').replace(/"/g,'&quot;')}" /></td>
+        <td><input class="vq-td-in" style="text-align:right" value="${(item.unit || '').replace(/"/g,'&quot;')}" /></td>
+        <td><input class="vq-td-in" style="text-align:right;font-weight:600" value="${(item.amount || '').replace(/"/g,'&quot;')}" /></td>
+      `;
+      tbody.appendChild(tr);
+      vqAr(tr.querySelector('textarea'));
+    });
+    const ctrl = document.createElement('tr');
+    ctrl.className = 'vq-add-row';
+    ctrl.innerHTML = `<td colspan="5"><button class="vq-btn-sm" onclick="vqAddRow()">+ Add Row</button><button class="vq-btn-sm" onclick="vqRemoveLastRow()">− Remove Last</button></td>`;
+    tbody.appendChild(ctrl);
+  };
+
+  window.vqGetItems = function() {
+    return [...document.querySelectorAll('.vq-irow')].map(tr => {
+      const ins = tr.querySelectorAll('input');
+      return { num: ins[0].value, desc: tr.querySelector('textarea').value, qty: ins[1].value, unit: ins[2].value, amount: ins[3].value };
+    });
+  };
+
+  window.vqAddRow = function() {
+    const it = vqGetItems(); it.push({ num: (it.length + 1) + '.', desc: '', qty: '', unit: '', amount: '' });
+    vqRenderItems(it);
+  };
+
+  window.vqRemoveLastRow = function() {
+    const it = vqGetItems(); if (it.length > 1) { it.pop(); vqRenderItems(it); }
+  };
+
+  window.vqCollect = function() {
+    const g = id => (document.getElementById(id) || {}).value || '';
+    return {
+      quoteRef: g('vqRef'), clientName: g('vqClientName'), clientContact: g('vqClientContact'),
+      clientSite: g('vqClientSite'), clientPhone: g('vqClientPhone'), clientEmail: g('vqClientEmail'),
+      jobRef: g('vqJobRef'), siteDate: g('vqSiteDate'), quoteDate: g('vqDate'), validDate: g('vqValidDate'),
+      scopeText: g('vqScope'), items: vqGetItems(),
+      gstAmt: g('vqGST'), grandTotal: g('vqTotal'),
+      quoteNotes: g('vqNotes'), payBank: g('vqPayBank'), payPayID: g('vqPayID'), payCard: g('vqPayCard'),
+      exclusionsText: g('vqExclusions'), termsText: g('vqTerms'), footerLine: g('vqFooter')
+    };
+  };
+
+  window.vqSaveToJob = function(jid) {
+    const jj = jobs.find(x => x.id === jid);
+    if (!jj) return;
+    const data = vqCollect();
+    jj.quoteData = data;
+    // Sync the total back to quoteAmount
+    const total = data.grandTotal.replace(/[^0-9.]/g, '');
+    if (total) jj.quoteAmount = total;
+    save();
+    // Flash save confirmation
+    const btn = event.target;
+    const orig = btn.textContent;
+    btn.textContent = '✓ Saved!';
+    btn.style.background = '#059669';
+    setTimeout(() => { btn.textContent = orig; btn.style.background = '#10b981'; }, 2000);
+  };
+
+  // ── POPULATE ─────────────────────────────────────────────────────────
+  function vqSet(id, v) {
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.value = v || '';
+    if (el.tagName === 'TEXTAREA') vqAr(el);
+  }
+
+  // Set all fields
+  vqSet('vqRef', defaults.quoteRef);
+  vqSet('vqClientName', defaults.clientName);
+  vqSet('vqClientContact', defaults.clientContact);
+  vqSet('vqClientSite', defaults.clientSite);
+  vqSet('vqClientPhone', defaults.clientPhone);
+  vqSet('vqClientEmail', defaults.clientEmail);
+  vqSet('vqJobRef', defaults.jobRef);
+  vqSet('vqRef2', defaults.quoteRef);
+  vqSet('vqSiteDate', defaults.siteDate);
+  vqSet('vqDate', defaults.quoteDate);
+  vqSet('vqValidDate', defaults.validDate);
+  vqSet('vqScope', defaults.scopeText);
+  vqSet('vqGST', defaults.gstAmt);
+  vqSet('vqTotal', defaults.grandTotal);
+  vqSet('vqNotes', defaults.quoteNotes);
+  vqSet('vqPayBank', defaults.payBank);
+  vqSet('vqPayID', defaults.payPayID);
+  vqSet('vqPayCard', defaults.payCard);
+  vqSet('vqExclusions', defaults.exclusionsText);
+  vqSet('vqTerms', defaults.termsText);
+  vqSet('vqFooter', defaults.footerLine);
+
+  vqRenderItems(defaults.items);
+  document.querySelectorAll('#vq-overlay textarea').forEach(vqAr);
+}
+
+
 // Separate from pipeline. Full line-item control: add/edit/delete/custom price.
 // No forced callout/labour/travel — clean slate per quote.
 
@@ -8537,7 +9117,7 @@ function renderIncomeTracker(){
   // Revenue invoiced this month (SAI invoiced/paid)
   const mthInvoiced = jobs
     .filter(j=>j.type==='SAI' && (j.invoiceDate||j.createdAt||'')>=mStart && (j.invoiceDate||j.createdAt||'')<=mEnd)
-    .reduce((s,j)=>s+(Number(j.invoiceAmount)||0), 0);
+    .reduce((s,j)=>s+jobRevenue(j), 0);
 
   const targets = [
     {label:'Minimum', val:Number(CFG.incomeMin)||0, color:'#ef4444'},
@@ -8587,7 +9167,7 @@ function renderIncomeTracker(){
 
 // ─── AGED DEBTORS ────────────────────────────────────────────────────────────
 function renderAgedDebtors(){
-  const overdue = jobs.filter(j=>['invoiced','overdue'].includes(j.status) && j.invoiceAmount);
+  const overdue = jobs.filter(j=>['invoiced','overdue'].includes(j.status) && jobRevenue(j) > 0);
   if(overdue.length===0) return '';
 
   const bucket = (j) => {
@@ -8606,7 +9186,7 @@ function renderAgedDebtors(){
   const bColors = {'current':'#10b981','1-30':'#f59e0b','31-60':'#f97316','61-90':'#ef4444','90+':'#7f1d1d'};
   const bLabels = {'current':'Current','1-30':'1–30 days','31-60':'31–60 days','61-90':'61–90 days','90+':'90+ days'};
 
-  const total = overdue.reduce((s,j)=>s+(Number(j.invoiceAmount)||0),0);
+  const total = overdue.reduce((s,j)=>s+jobRevenue(j),0);
 
   return `<div style="background:#fff;border:1px solid #e2e8f0;border-radius:12px;overflow:hidden;margin-bottom:16px">
     <div style="background:#7f1d1d;padding:12px 18px;display:flex;justify-content:space-between;align-items:center">
@@ -8615,7 +9195,7 @@ function renderAgedDebtors(){
     </div>
     <div style="display:grid;grid-template-columns:repeat(5,1fr);border-bottom:1px solid #f1f5f9">
       ${Object.entries(buckets).map(([key,arr])=>{
-        const val=arr.reduce((s,j)=>s+(Number(j.invoiceAmount)||0),0);
+        const val=arr.reduce((s,j)=>s+jobRevenue(j),0);
         return `<div style="padding:12px 14px;border-right:1px solid #f1f5f9;text-align:center">
           <div style="font-size:10px;font-weight:700;color:${bColors[key]};text-transform:uppercase;margin-bottom:4px">${bLabels[key]}</div>
           <div style="font-size:16px;font-weight:800;color:${val>0?bColors[key]:'#94a3b8'}">${fmt$(val)}</div>
@@ -8635,7 +9215,7 @@ function renderAgedDebtors(){
             <div style="font-size:11px;color:#94a3b8">${j.invoiceNumber||j.jobNumber} · Due: ${fmtD(j.invoiceDue)||'not set'}</div>
           </div>
           <div style="text-align:right">
-            <div style="font-size:14px;font-weight:800;color:${bColors[bk]}">${fmt$(j.invoiceAmount)}</div>
+            <div style="font-size:14px;font-weight:800;color:${bColors[bk]}">${fmt$(jobRevenue(j))}</div>
           </div>
           <div style="display:flex;gap:5px">
             <button onclick="sendWhatsApp('${j.id}','chase')" style="background:#25D366;color:#fff;border:none;border-radius:5px;padding:5px 8px;font-size:11px;font-weight:700;cursor:pointer" title="Chase via WhatsApp">💬</button>
@@ -8648,8 +9228,8 @@ function renderAgedDebtors(){
 }
 
 function printAgedDebtors(){
-  const overdue = jobs.filter(j=>['invoiced','overdue'].includes(j.status) && j.invoiceAmount);
-  const total = overdue.reduce((s,j)=>s+(Number(j.invoiceAmount)||0),0);
+  const overdue = jobs.filter(j=>['invoiced','overdue'].includes(j.status) && jobRevenue(j) > 0);
+  const total = overdue.reduce((s,j)=>s+jobRevenue(j),0);
   const w = window.open('','_blank');
   if(!w) return;
   w.document.write(`<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Aged Debtors Report</title>
@@ -8672,7 +9252,7 @@ function printAgedDebtors(){
     <td style="font-family:monospace;font-size:12px">${esc(j.invoiceNumber||j.jobNumber)}</td>
     <td>${fmtD(j.invoiceDue)||'—'}</td>
     <td><strong style="color:${col}">${days>0?days+' days':'Current'}</strong></td>
-    <td style="text-align:right;font-weight:800;color:${col}">${fmt$(j.invoiceAmount)}</td>
+    <td style="text-align:right;font-weight:800;color:${col}">${fmt$(jobRevenue(j))}</td>
     <td><span style="background:${col};color:#fff;border-radius:4px;padding:2px 8px;font-size:11px;font-weight:700">${days>90?'CRITICAL':days>60?'SERIOUS':days>30?'OVERDUE':days>0?'LATE':'CURRENT'}</span></td></tr>`;
   }).join('')}
   </tbody><tfoot><tr style="background:#0f172a"><td colspan="4" style="color:#fff;font-weight:800;padding:12px">TOTAL OUTSTANDING</td><td style="text-align:right;color:#fbbf24;font-size:18px;font-weight:900;padding:12px">${fmt$(total)}</td><td></td></tr></tfoot></table>
@@ -9310,8 +9890,8 @@ function _renderProjectAnalytics(p, linkedJobs){
   const estWeeksRemaining = doneTasks>0 ? Math.ceil((totalTasks-doneTasks)/velocity) : '?';
 
   // Linked job revenue
-  const linkedRev = linkedJobs.reduce((s,j)=>s+(Number(j.invoiceAmount||j.quoteAmount)||0),0);
-  const linkedPaid = linkedJobs.filter(j=>j.status==='paid').reduce((s,j)=>s+(Number(j.invoiceAmount)||0),0);
+  const linkedRev = linkedJobs.reduce((s,j)=>s+jobRevenue(j),0);
+  const linkedPaid = linkedJobs.filter(j=>j.status==='paid').reduce((s,j)=>s+jobRevenue(j),0);
 
   // Win/loss scenario data
   const scenarios = [
@@ -9513,7 +10093,7 @@ function _renderProjectAnalytics(p, linkedJobs){
         var CW=cf.offsetWidth||600,CH=120;
         cf.width=CW*dpr;cf.height=CH*dpr;cf.style.width=CW+'px';cf.style.height=CH+'px';
         var cc=cf.getContext('2d');cc.scale(dpr,dpr);
-        var lj=${JSON.stringify(linkedJobs.map(j=>({num:j.jobNumber,amt:Number(j.invoiceAmount||j.quoteAmount)||0,paid:j.status==='paid'})))};
+        var lj=${JSON.stringify(linkedJobs.map(j=>({num:j.jobNumber,amt:jobRevenue(j),paid:j.status==='paid'})))};
         var cp={top:10,right:10,bottom:24,left:10};
         var lcW=CW-cp.left-cp.right,lcH=CH-cp.top-cp.bottom;
         var maxA=Math.max.apply(null,lj.map(function(j){return j.amt;}))||1;
@@ -11646,7 +12226,7 @@ function renderProfitability(){
   const getJobCostTotal = (j) => getJobCost(j).total;
 
   const jobData = paidJobs.map(j=>{
-    const revenue = Number(j.invoiceAmount||0);
+    const revenue = jobRevenue(j);
     const cost    = getJobCostTotal(j);
     const profit  = revenue - cost;
     const margin  = revenue>0 ? Math.round((profit/revenue)*100) : 0;
@@ -14830,7 +15410,7 @@ function renderPayroll(){
   const paidYTD = jobs.filter(j=>j.status==='paid'&&inPayFY(j.paidDate)).reduce((s,j)=>s+jobRevenue(j),0);
   const thisMonthStr = today().substring(0,7);
   const paidThisMonth = jobs.filter(j=>j.status==='paid'&&(j.paidDate||'').startsWith(thisMonthStr)).reduce((s,j)=>s+jobRevenue(j),0);
-  const totalOutstanding = jobs.filter(j=>['invoiced','overdue'].includes(j.status)).reduce((s,j)=>s+(Number(j.invoiceAmount)||0),0);
+  const totalOutstanding = jobs.filter(j=>['invoiced','overdue'].includes(j.status)).reduce((s,j)=>s+jobRevenue(j),0);
   const estimatedSuperOwed = P.superPerPeriod * P.periods / 4; // quarterly estimate
 
   return `<div style="padding:32px;max-width:1000px">
@@ -15606,7 +16186,7 @@ function buildAIContext(){
   // ── JOB METRICS ──
   const activeJobs = jobs.filter(j=>!['paid','cancelled','lost'].includes(j.status));
   const overdueInvoices = jobs.filter(j=>['invoiced','overdue'].includes(j.status) && j.invoiceDue && new Date(j.invoiceDue+'T00:00:00')<new Date());
-  const totalOutstanding = jobs.filter(j=>['invoiced','overdue'].includes(j.status)).reduce((s,j)=>s+(Number(j.invoiceAmount)||0),0);
+  const totalOutstanding = jobs.filter(j=>['invoiced','overdue'].includes(j.status)).reduce((s,j)=>s+jobRevenue(j),0);
   const pipelineJobs = jobs.filter(j=>['quoted','lead','booking','approved','deposit_due','deposit_paid','parts_ordered','scheduled','work_order','po_received'].includes(j.status));
   const pipelineValue = pipelineJobs.reduce((s,j)=>s+(Number(j.quoteAmount||j.invoiceAmount)||0),0);
   const thisMonthStr = today().substring(0,7);
