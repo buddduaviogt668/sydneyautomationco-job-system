@@ -14411,6 +14411,26 @@ function docTerms(isQuote){
 
 function buildDocLines(j){
   const lines = [];
+  // For Invoices (SAI), check for explicit invoiceDoc or invoiceLines first
+  if (j.type === 'SAI') {
+    if (j.invoiceDoc && j.invoiceDoc.lines && j.invoiceDoc.lines.length) {
+      j.invoiceDoc.lines.forEach(l => {
+        const qty = Number(l.qty) || 0;
+        const unit = Number(l.unit) || 0;
+        lines.push({ desc: l.desc || '', partNo: l.partNumber || '', qty, unit, amount: qty * unit });
+      });
+      return lines;
+    }
+    if (j.invoiceLines && j.invoiceLines.length) {
+      j.invoiceLines.forEach(l => {
+        const qty = Number(l.qty) || 0;
+        const unit = Number(l.unit) || 0;
+        lines.push({ desc: l.desc || '', partNo: l.partNumber || '', qty, unit, amount: qty * unit });
+      });
+      return lines;
+    }
+  }
+
   // New quoteDoc format (from Quotes tab editor)
   if(j.quoteDoc && j.quoteDoc.lines && j.quoteDoc.lines.length){
     j.quoteDoc.lines.forEach(l=>{
@@ -14435,7 +14455,8 @@ function buildDocLines(j){
     return lines;
   }
   // Fallback: single line from scope + total
-  lines.push({desc:j.scope||'Works as agreed',partNo:'',qty:1,unit:Number(j.quoteAmount)||0,amount:Number(j.quoteAmount)||0});
+  const fallbackAmt = j.type === 'SAI' ? (Number(j.invoiceAmount) || Number(j.quoteAmount) || 0) : (Number(j.quoteAmount) || 0);
+  lines.push({desc:j.scope||'Works as agreed',partNo:'',qty:1,unit:fallbackAmt,amount:fallbackAmt});
   return lines;
 }
 
