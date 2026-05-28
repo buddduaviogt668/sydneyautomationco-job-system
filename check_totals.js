@@ -1,42 +1,44 @@
 const fs = require('fs');
 
+function jobRevenue(j) {
+    if ((j.jobNumber || '').startsWith('SAQ') || j.type === 'SAQ') return 0;
+    const dep = Number(j.depositAmount) || 0;
+    const inv = Number(j.invoiceAmount) || 0;
+    if (dep > 0 && inv > 0) return dep + inv;
+    if (inv > 0) return inv;
+    return Number(j.quoteAmount) || 0;
+}
+
+function jobOutstanding(j) {
+    if (j.invoiceAmount != null && j.invoiceAmount !== '') {
+        return Number(j.invoiceAmount) || 0;
+    }
+    const q = Number(j.quoteAmount) || 0;
+    const d = Number(j.depositAmount) || 0;
+    return (q - d > 0) ? (q - d) : 0;
+}
+
 try {
     const data = JSON.parse(fs.readFileSync('SydneyAutomation_Backup_2026-05-27.json', 'utf8'));
     
-    let totalInvoiced = 0;
     let totalCollected = 0;
     let totalOutstanding = 0;
-    
     const overdueJobs = [];
-    const supplierInvoices = [];
     
     data.jobs.forEach(job => {
-        if (job.status === 'lost') return;
-        if (job.status === 'quoted') return;
-        if (job.status === 'lead') return;
-
-        const amount = parseFloat(job.invoiceAmount) || 0;
+        if (['lost', 'quoted', 'lead'].includes(job.status)) return;
         
-        // Summing up everything that is invoiced, overdue, scheduled, paid, approved?
-        // Wait, if it has an invoiceAmount and an invoiceNumber, it's invoiced.
-        if (job.invoiceNumber && amount > 0) {
-            totalInvoiced += amount;
-            
-            if (job.status === 'paid') {
-                totalCollected += amount;
-            } else {
-                totalOutstanding += amount;
-            }
-            
+        if (job.status === 'paid') {
+            totalCollected += jobRevenue(job);
+        } else if (['invoiced', 'overdue'].includes(job.status)) {
+            totalOutstanding += jobOutstanding(job);
             if (job.status === 'overdue') {
                 overdueJobs.push(job.jobNumber);
             }
         }
-        
-        if (job.supplierRef) {
-            // this job has a supplier cost? Actually the supplier spend comes from somewhere else.
-        }
     });
+
+    const totalInvoiced = totalCollected + totalOutstanding;
 
     console.log(`Total Invoiced: $${totalInvoiced.toFixed(2)}`);
     console.log(`Collected: $${totalCollected.toFixed(2)}`);
