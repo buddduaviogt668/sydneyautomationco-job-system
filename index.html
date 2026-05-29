@@ -7409,10 +7409,10 @@ function renderFinancials(){
     }
     const mRev=mJobs.reduce((s,j)=>s+jobRevenue(j),0);
     const mCost=overheadMonthlyTotal();
-    // COGS matching principle: Job parts cost + Unlinked supplier purchases
-    const mJobCogs=mJobs.reduce((s,j)=>s+jobCost(j),0);
-    const mUnlinkedSup=(window._supInvoices||[]).filter(i=>i.date&&i.date.startsWith(ms)&&!i.jobId&&!i.jobRef).reduce((s,i)=>s+Number(i.amount||0),0);
-    const mSupCost=mJobCogs+mUnlinkedSup;
+    // Supplier costs by invoice date — matches "minus supplier invoice costs (by invoice date)" shown in UI.
+    // Using the supplier invoice's own date (not the linked job's paid date) ensures costs land in the
+    // correct month regardless of when the client pays us.
+    const mSupCost=(window._supInvoices||[]).filter(i=>i.date&&i.date.startsWith(ms)).reduce((s,i)=>s+Number(i.amount||0),0);
     const mTH=mRev-mCost-mSupCost;
     const pctMin=mRev>0?Math.min(100,Math.round((mRev/(CFG.incomeMin/12))*100)):0;
     const vsTarget=mRev>=CFG.incomeComfort/12?'✓ Comfortable':mRev>=CFG.incomeMin/12?'✓ Minimum':'⚠ Below Min';
