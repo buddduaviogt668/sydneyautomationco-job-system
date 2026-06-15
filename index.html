@@ -2597,7 +2597,7 @@ function renderDashboard(){
         <div style="font-size:12px;color:#b91c1c;margin-top:2px">${escTier3.map(j=>{const c=gc(j.clientId);return (c?.company||j.jobNumber)+' · '+fmt$(jobOutstanding(j))+' · '+Math.floor((new Date()-new Date(j.invoiceDue+'T00:00:00'))/86400000)+'d overdue';}).join(' &nbsp;|&nbsp; ')}</div>
       </div>
       <div style="display:flex;gap:8px;flex-shrink:0">
-        ${escTier3.map(j=>`<button onclick="openChaseComms('${j.id}',3)" style="background:#dc2626;color:#fff;border:none;border-radius:7px;padding:7px 12px;font-size:12px;font-weight:700;cursor:pointer">Final Notice →</button>`).join('')}
+        ${escTier3.map(j=>`<button onclick="openChaseComms('${j.id}',3)" style="background:#dc2626;color:#fff;border:none;border-radius:7px;padding:7px 12px;font-size:12px;font-weight:700;cursor:pointer">Final Notice →</button>${CFG.stripePaymentLinkBase?`<button onclick="openStripePaymentLink('${j.id}')" title="Open Stripe pay link for this invoice" style="background:#635bff;color:#fff;border:none;border-radius:7px;padding:7px 12px;font-size:12px;font-weight:700;cursor:pointer">💳 Pay Now</button>`:''}`).join('')}
       </div>
     </div>` : ''}
     ${escTier2.length ? `
@@ -2608,7 +2608,7 @@ function renderDashboard(){
         <div style="font-size:12px;color:#ea580c;margin-top:2px">${escTier2.map(j=>{const c=gc(j.clientId);return (c?.company||j.jobNumber)+' · '+fmt$(jobOutstanding(j));}).join(' &nbsp;|&nbsp; ')}</div>
       </div>
       <div style="display:flex;gap:8px;flex-shrink:0">
-        ${escTier2.map(j=>`<button onclick="openChaseComms('${j.id}',2)" style="background:#f97316;color:#fff;border:none;border-radius:7px;padding:7px 12px;font-size:12px;font-weight:700;cursor:pointer">Send Notice →</button>`).join('')}
+        ${escTier2.map(j=>`<button onclick="openChaseComms('${j.id}',2)" style="background:#f97316;color:#fff;border:none;border-radius:7px;padding:7px 12px;font-size:12px;font-weight:700;cursor:pointer">Send Notice →</button>${CFG.stripePaymentLinkBase?`<button onclick="openStripePaymentLink('${j.id}')" title="Open Stripe pay link" style="background:#635bff;color:#fff;border:none;border-radius:7px;padding:7px 12px;font-size:12px;font-weight:700;cursor:pointer">💳 Pay Now</button>`:''}`).join('')}
       </div>
     </div>` : ''}
     ${escTier1.length ? `
@@ -2619,7 +2619,7 @@ function renderDashboard(){
         <div style="font-size:12px;color:#b45309;margin-top:2px">${escTier1.map(j=>{const c=gc(j.clientId);return (c?.company||j.jobNumber)+' · '+fmt$(jobOutstanding(j));}).join(' &nbsp;|&nbsp; ')}</div>
       </div>
       <div style="display:flex;gap:8px;flex-shrink:0">
-        ${escTier1.map(j=>`<button onclick="openChaseComms('${j.id}',1)" style="background:#f59e0b;color:#fff;border:none;border-radius:7px;padding:7px 12px;font-size:12px;font-weight:700;cursor:pointer">Send Reminder →</button>`).join('')}
+        ${escTier1.map(j=>`<button onclick="openChaseComms('${j.id}',1)" style="background:#f59e0b;color:#fff;border:none;border-radius:7px;padding:7px 12px;font-size:12px;font-weight:700;cursor:pointer">Send Reminder →</button>${CFG.stripePaymentLinkBase?`<button onclick="openStripePaymentLink('${j.id}')" title="Open Stripe pay link" style="background:#635bff;color:#fff;border:none;border-radius:7px;padding:7px 12px;font-size:12px;font-weight:700;cursor:pointer">💳 Pay Now</button>`:''}`).join('')}
       </div>
     </div>` : ''}
     ${(()=>{
@@ -9582,6 +9582,7 @@ function renderAgedDebtors(){
           </div>
           <div style="display:flex;gap:5px">
             <button onclick="sendWhatsApp('${j.id}','chase')" style="background:#25D366;color:#fff;border:none;border-radius:5px;padding:5px 8px;font-size:11px;font-weight:700;cursor:pointer" title="Chase via WhatsApp">💬</button>
+            ${CFG.stripePaymentLinkBase?`<button onclick="openStripePaymentLink('${j.id}')" style="background:#635bff;color:#fff;border:none;border-radius:5px;padding:5px 8px;font-size:11px;font-weight:700;cursor:pointer" title="Open Stripe pay link">💳</button>`:''}
             <button onclick="openJobDetail('${j.id}')" style="background:#f1f5f9;border:1px solid #e2e8f0;border-radius:5px;padding:5px 8px;font-size:11px;font-weight:600;cursor:pointer;color:#334155">View →</button>
           </div>
         </div>`;
@@ -14535,9 +14536,138 @@ function buildDocLines(j){
   return lines;
 }
 
+function _printV3Quote(j, qd){
+  const w = window.open('','_blank','width=980,height=900');
+  if(!w){alert('Allow popups then try again');return;}
+  const d = w.document; d.open();
+
+  // Helper: escape HTML
+  const e = s => (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  const nl = s => e(s||'').replace(/\n/g,'<br>');
+
+  // Items HTML
+  const itemRows = (qd.items||[]).map((item,i)=>`
+    <tr style="${i%2?'background:#f7f8fa':''}">
+      <td style="padding-left:36px;font-family:'Barlow Condensed',sans-serif;font-size:12px;font-weight:700;color:#f5821f;white-space:nowrap;padding-top:13px;padding-bottom:13px;vertical-align:top;border-bottom:1px solid #d8dde6">${e(item.num||((i+1)+'.'))||''}</td>
+      <td style="padding:13px 10px;font-size:13px;line-height:1.5;color:#1e2d4e;vertical-align:top;border-bottom:1px solid #d8dde6">${nl(item.desc)}</td>
+      <td style="text-align:center;padding:13px 10px;font-size:13px;color:#1e2d4e;vertical-align:top;border-bottom:1px solid #d8dde6;width:72px">${e(item.qty)}</td>
+      <td style="text-align:center;padding:13px 10px;font-size:13px;color:#1e2d4e;vertical-align:top;border-bottom:1px solid #d8dde6;width:72px">${item.unit?'$'+Number(item.unit).toLocaleString('en-AU',{minimumFractionDigits:2}):'—'}</td>
+      <td style="padding-right:36px;text-align:right;padding-top:13px;padding-bottom:13px;font-size:13px;font-weight:600;color:#1e2d4e;white-space:nowrap;vertical-align:top;border-bottom:1px solid #d8dde6;width:110px">${item.amount?'$'+Number(item.amount).toLocaleString('en-AU',{minimumFractionDigits:2}):'—'}</td>
+    </tr>`).join('');
+
+  d.write(`<!DOCTYPE html><html lang="en"><head>
+<meta charset="UTF-8"><title>Quote — ${e(j.jobNumber)}</title>
+<link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@700;800&family=Barlow:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'Barlow',sans-serif;background:#c8cdd8;color:#1e2d4e;padding:24px 16px 48px;font-size:13px}
+#toolbar{max-width:860px;margin:0 auto 14px;display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+#quote{max-width:860px;margin:0 auto 48px;background:#fff;box-shadow:0 4px 28px rgba(30,45,78,.18)}
+@media print{#toolbar{display:none!important}body{background:#fff;padding:0}#quote{box-shadow:none;max-width:100%}*{-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important}}
+</style>
+</head><body>
+<div id="toolbar">
+  <span style="font-family:'Barlow Condensed',sans-serif;font-size:12px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:#555;margin-right:auto">SAC · Quote — ${e(qd.quoteRef||j.jobNumber)}</span>
+  <button onclick="window.print()" style="font-family:'Barlow Condensed',sans-serif;font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;padding:8px 18px;border:none;border-radius:4px;cursor:pointer;background:#1e2d4e;color:#fff">🖨 Print / PDF</button>
+  <button onclick="window.close()" style="font-family:'Barlow Condensed',sans-serif;font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;padding:8px 18px;border:none;border-radius:4px;cursor:pointer;background:#ef4444;color:#fff">✕ Close</button>
+</div>
+<div id="quote">
+  <!-- HEADER -->
+  <div style="background:#1e2d4e;display:grid;grid-template-columns:1fr auto;align-items:stretch">
+    <div style="padding:26px 36px 22px;border-bottom:3px solid #f5821f">
+      <div style="font-family:'Barlow Condensed',sans-serif;font-size:28px;font-weight:800;letter-spacing:.04em;text-transform:uppercase;color:#fff;line-height:1">Sydney Automation Co.</div>
+      <div style="height:3px;background:#f5821f;margin:7px 0 8px;width:100%"></div>
+      <div style="font-size:10px;font-weight:400;letter-spacing:.28em;text-transform:uppercase;color:#a8bdd4">L I G H T I N G &nbsp; C O N T R O L &nbsp; S P E C I A L I S T S</div>
+    </div>
+    <div style="padding:26px 36px 22px;text-align:right;display:flex;flex-direction:column;justify-content:center;gap:3px;border-left:1px solid rgba(255,255,255,.08);min-width:240px">
+      <div style="color:#a8bdd4;font-size:11.5px">ABN: 61 136 364 150 · 0422 469 739</div>
+      <div style="color:#a8bdd4;font-size:11.5px">service@sydneyautomationco.com.au</div>
+    </div>
+  </div>
+  <!-- TITLE BAR -->
+  <div style="background:#253560;padding:12px 36px;display:flex;justify-content:space-between;align-items:center;border-bottom:2px solid #f5821f">
+    <div style="font-family:'Barlow Condensed',sans-serif;font-size:20px;font-weight:800;letter-spacing:.15em;text-transform:uppercase;color:#fff">Quote</div>
+    <div style="display:flex;align-items:center;gap:10px">
+      <span style="font-family:'Barlow Condensed',sans-serif;font-size:10px;font-weight:700;letter-spacing:.15em;text-transform:uppercase;color:#a8bdd4">Ref</span>
+      <span style="font-family:'Barlow Condensed',sans-serif;font-size:16px;font-weight:700;letter-spacing:.08em;color:#f5821f">${e(qd.quoteRef||j.jobNumber)}</span>
+    </div>
+  </div>
+  <!-- FOR / DETAILS -->
+  <div style="display:grid;grid-template-columns:1fr 1fr;border-bottom:1px solid #d8dde6">
+    <div style="padding:20px 36px;border-right:1px solid #d8dde6">
+      <span style="font-family:'Barlow Condensed',sans-serif;font-size:9px;font-weight:700;letter-spacing:.22em;text-transform:uppercase;color:#1e2d4e;border-bottom:2px solid #f5821f;padding-bottom:5px;margin-bottom:12px;display:inline-block">Quote For</span>
+      ${qd.clientName?`<div style="font-size:13.5px;font-weight:600;color:#1e2d4e;line-height:1.55">${nl(qd.clientName)}</div>`:''}
+      ${qd.clientContact?`<div style="font-size:12.5px;color:#6b7a94;margin-top:3px">${nl(qd.clientContact)}</div>`:''}
+      ${qd.clientSite?`<div style="font-size:12.5px;color:#6b7a94;margin-top:2px">${nl(qd.clientSite)}</div>`:''}
+      ${qd.clientPhone?`<div style="font-size:12.5px;color:#6b7a94;margin-top:2px">${nl(qd.clientPhone)}</div>`:''}
+      ${qd.clientEmail?`<div style="font-size:12.5px;color:#6b7a94;margin-top:2px">${nl(qd.clientEmail)}</div>`:''}
+    </div>
+    <div style="padding:20px 36px">
+      <span style="font-family:'Barlow Condensed',sans-serif;font-size:9px;font-weight:700;letter-spacing:.22em;text-transform:uppercase;color:#1e2d4e;border-bottom:2px solid #f5821f;padding-bottom:5px;margin-bottom:12px;display:inline-block">Details</span>
+      <table style="font-size:12px;width:100%;border-collapse:collapse">
+        ${qd.jobRef?`<tr><td style="color:#6b7a94;padding:3px 0;width:90px">Job Ref</td><td style="font-weight:500;color:#1e2d4e">${e(qd.jobRef)}</td></tr>`:''}
+        ${qd.quoteRef?`<tr><td style="color:#6b7a94;padding:3px 0">Quote Ref</td><td style="font-weight:500;color:#1e2d4e">${e(qd.quoteRef)}</td></tr>`:''}
+        ${qd.siteDate?`<tr><td style="color:#6b7a94;padding:3px 0">Site Date</td><td style="font-weight:500;color:#1e2d4e">${e(qd.siteDate)}</td></tr>`:''}
+        ${qd.quoteDate?`<tr><td style="color:#6b7a94;padding:3px 0">Date</td><td style="font-weight:500;color:#1e2d4e">${e(qd.quoteDate)}</td></tr>`:''}
+        ${qd.validDate?`<tr><td style="color:#6b7a94;padding:3px 0">Valid Until</td><td style="font-weight:500;color:#1e2d4e">${e(qd.validDate)}</td></tr>`:''}
+      </table>
+    </div>
+  </div>
+  ${qd.scopeText?`<!-- SCOPE --><div style="padding:16px 36px;background:#f7f8fa;border-bottom:1px solid #d8dde6"><span style="font-family:'Barlow Condensed',sans-serif;font-size:9px;font-weight:700;letter-spacing:.22em;text-transform:uppercase;color:#1e2d4e;border-bottom:2px solid #f5821f;padding-bottom:5px;display:inline-block">Scope of Work</span><div style="font-size:13px;line-height:1.65;color:#1e2d4e;margin-top:8px">${nl(qd.scopeText)}</div></div>`:''}
+  <!-- TABLE -->
+  <table style="width:100%;border-collapse:collapse">
+    <thead><tr style="background:#1e2d4e">
+      <th style="padding:10px 10px 10px 36px;font-family:'Barlow Condensed',sans-serif;font-size:9.5px;font-weight:700;letter-spacing:.18em;text-transform:uppercase;color:#fff;text-align:left;width:38px">#</th>
+      <th style="padding:10px;font-family:'Barlow Condensed',sans-serif;font-size:9.5px;font-weight:700;letter-spacing:.18em;text-transform:uppercase;color:#fff;text-align:left">Description</th>
+      <th style="padding:10px;font-family:'Barlow Condensed',sans-serif;font-size:9.5px;font-weight:700;letter-spacing:.18em;text-transform:uppercase;color:#fff;text-align:center;width:72px">Qty</th>
+      <th style="padding:10px;font-family:'Barlow Condensed',sans-serif;font-size:9.5px;font-weight:700;letter-spacing:.18em;text-transform:uppercase;color:#fff;text-align:center;width:72px">Unit ($)</th>
+      <th style="padding:10px 36px 10px 10px;font-family:'Barlow Condensed',sans-serif;font-size:9.5px;font-weight:700;letter-spacing:.18em;text-transform:uppercase;color:#fff;text-align:right;width:110px">Amount ($)</th>
+    </tr></thead>
+    <tbody>${itemRows}</tbody>
+  </table>
+  <!-- TOTALS -->
+  <div style="display:flex;justify-content:flex-end;padding:0 36px;border-bottom:1px solid #d8dde6">
+    <div style="min-width:270px;padding:14px 0">
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:40px;padding:5px 0;font-size:13px;color:#6b7a94;border-bottom:1px solid #d8dde6">
+        <span>GST (Not registered)</span><span>${e(qd.gstAmt||'$0.00')}</span>
+      </div>
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:40px;font-family:'Barlow Condensed',sans-serif;font-size:17px;font-weight:800;letter-spacing:.05em;text-transform:uppercase;color:#1e2d4e;border-top:2px solid #1e2d4e;margin-top:6px;padding-top:10px">
+        <span>Total Due</span><span style="color:#f5821f">${e(qd.grandTotal||'')}</span>
+      </div>
+    </div>
+  </div>
+  ${qd.quoteNotes?`<!-- NOTES --><div style="padding:16px 36px;background:#f7f8fa;border-bottom:1px solid #d8dde6"><span style="font-family:'Barlow Condensed',sans-serif;font-size:9px;font-weight:700;letter-spacing:.22em;text-transform:uppercase;color:#1e2d4e;border-bottom:2px solid #f5821f;padding-bottom:5px;display:inline-block">Additional Notes</span><div style="font-size:13px;line-height:1.65;color:#1e2d4e;margin-top:8px">${nl(qd.quoteNotes)}</div></div>`:''}
+  <!-- PAYMENT -->
+  <div style="padding:16px 36px;border-bottom:1px solid #d8dde6">
+    <span style="font-family:'Barlow Condensed',sans-serif;font-size:9px;font-weight:700;letter-spacing:.22em;text-transform:uppercase;color:#1e2d4e;border-bottom:2px solid #f5821f;padding-bottom:5px;display:inline-block;margin-bottom:12px">Payment</span>
+    <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:14px">
+      ${qd.payBank?`<div style="border:1px solid #d8dde6;border-top:2px solid #f5821f;border-radius:3px;padding:12px 14px;background:#f7f8fa"><div style="font-family:'Barlow Condensed',sans-serif;font-size:9.5px;font-weight:700;letter-spacing:.15em;text-transform:uppercase;color:#1e2d4e;margin-bottom:8px">■ Bank Transfer</div><div style="font-size:12px;color:#6b7a94;line-height:1.65">${nl(qd.payBank)}</div></div>`:''}
+      ${qd.payPayID?`<div style="border:1px solid #d8dde6;border-top:2px solid #f5821f;border-radius:3px;padding:12px 14px;background:#f7f8fa"><div style="font-family:'Barlow Condensed',sans-serif;font-size:9.5px;font-weight:700;letter-spacing:.15em;text-transform:uppercase;color:#1e2d4e;margin-bottom:8px">■ PayID (Instant)</div><div style="font-size:12px;color:#6b7a94;line-height:1.65">${nl(qd.payPayID)}</div></div>`:''}
+      ${qd.payCard?`<div style="border:1px solid #d8dde6;border-top:2px solid #f5821f;border-radius:3px;padding:12px 14px;background:#f7f8fa"><div style="font-family:'Barlow Condensed',sans-serif;font-size:9.5px;font-weight:700;letter-spacing:.15em;text-transform:uppercase;color:#1e2d4e;margin-bottom:8px">■ Card Payment</div><div style="font-size:12px;color:#6b7a94;line-height:1.65"><a href="${e(qd.payCard)}" target="_blank" style="color:#635bff">${nl(qd.payCard)}</a></div></div>`:''}
+    </div>
+  </div>
+  ${(qd.exclusionsText||qd.termsText)?`<!-- EXCLUSIONS + TERMS -->
+  <div style="display:grid;grid-template-columns:1fr 1fr;border-bottom:1px solid #d8dde6">
+    ${qd.exclusionsText?`<div style="padding:16px 36px;border-right:1px solid #d8dde6"><span style="font-family:'Barlow Condensed',sans-serif;font-size:9px;font-weight:700;letter-spacing:.22em;text-transform:uppercase;color:#1e2d4e;border-bottom:2px solid #f5821f;padding-bottom:5px;display:inline-block;margin-bottom:8px">Exclusions</span><div style="font-size:12px;line-height:1.72;color:#6b7a94">${nl(qd.exclusionsText)}</div></div>`:''}
+    ${qd.termsText?`<div style="padding:16px 36px"><span style="font-family:'Barlow Condensed',sans-serif;font-size:9px;font-weight:700;letter-spacing:.22em;text-transform:uppercase;color:#1e2d4e;border-bottom:2px solid #f5821f;padding-bottom:5px;display:inline-block;margin-bottom:8px">Terms &amp; Conditions</span><div style="font-size:12px;line-height:1.72;color:#6b7a94">${nl(qd.termsText)}</div></div>`:''}
+  </div>`:''}
+  <!-- FOOTER -->
+  <div style="background:#1e2d4e;padding:14px 36px;display:flex;align-items:center;justify-content:center;border-top:3px solid #f5821f">
+    <div style="color:#a8bdd4;font-family:'Barlow Condensed',sans-serif;font-size:11px;font-weight:400;letter-spacing:.1em;text-transform:uppercase;text-align:center">${e(qd.footerLine||'Thank you for your business. service@sydneyautomationco.com.au | 0422 469 739')}</div>
+  </div>
+</div>
+</body></html>`);
+  d.close();
+}
+
 function printQuoteDoc(jobId){
   const j = jobs.find(x=>x.id===jobId);
   if(!j){alert('Job not found');return;}
+  // If Visual Quote data was saved (v3 template), use that design for print
+  if(j.quoteData && (j.quoteData.items||[]).length > 0){
+    _printV3Quote(j, j.quoteData);
+    return;
+  }
   const c = gc(j.clientId)||{};
   const lines = buildDocLines(j);
   const total = lines.reduce((s,l)=>s+l.amount,0) || Number(j.quoteAmount)||0;
