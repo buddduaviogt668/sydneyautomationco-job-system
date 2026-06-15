@@ -2560,7 +2560,7 @@ function renderDashboard(){
         <button onclick="aiAsk('Analyse my pricing. Am I leaving money on the table? What call-out fees, minimum hours, variations, or re-commissioning charges am I absorbing for free? Give specific dollar amounts.')" class="ai-section-btn" style="background:#0369a1">💸 Pricing</button>
         <button onclick="aiAsk('What are the biggest risks to my business right now — cash flow, compliance, client concentration, scope creep? Rank them and tell me what to do.')" class="ai-section-btn" style="background:#dc2626">⚠ Risks</button>
         <button onclick="aiAsk('Review ALL my data right now and tell me the 3 most urgent things that need my attention TODAY. Use job numbers and dollar amounts. No fluff.')" class="ai-section-btn" style="background:#0f172a">🎯 Right Now</button>
-        <button onclick="(function(){var od=jobs.filter(function(j){return j.status==='overdue'||(j.status==='invoiced'&&j.invoiceDue&&j.invoiceDue<today());});if(!od.length){showToast('No overdue invoices','info');return;}aiAsk('I have '+od.length+' overdue invoices totalling $'+od.reduce(function(s,j){return s+jobRevenue(j);},0).toFixed(2)+'. Give me a collection battle plan — what to say to each client, in what order, using what channel (phone/WA/email). Be aggressive.');})();" class="ai-section-btn" style="background:#ef4444">💰 Collect Now</button>
+        <button onclick="(function(){var od=jobs.filter(function(j){return j.status==='overdue'||(j.status==='invoiced'&&j.invoiceDue&&j.invoiceDue<today());});if(!od.length){showToast('No overdue invoices','info');return;}aiAsk('I have '+od.length+' overdue invoices totalling $'+od.reduce(function(s,j){return s+jobOutstanding(j);},0).toFixed(2)+'. Give me a collection battle plan — what to say to each client, in what order, using what channel (phone/WA/email). Be aggressive.');})();" class="ai-section-btn" style="background:#ef4444">💰 Collect Now</button>
       </div>
     </div>
     <div style="display:flex;gap:16px;margin-bottom:24px;flex-wrap:wrap">
@@ -11269,9 +11269,9 @@ const AGENT_REGISTRY = [
       const next30 = new Date(now.getTime()+30*86400000);
       // Outstanding invoices due in next 30 days
       const dueSoon = jobs.filter(j=>['invoiced','overdue'].includes(j.status)&&j.invoiceDue&&new Date(j.invoiceDue+'T00:00:00')<=next30);
-      const dueTotal = dueSoon.reduce((s,j)=>s+Number(j.invoiceAmount||0),0);
-      const overdue = jobs.filter(j=>j.status==='overdue');
-      const overdueTotal = overdue.reduce((s,j)=>s+Number(j.invoiceAmount||0),0);
+      const dueTotal = dueSoon.reduce((s,j)=>s+jobOutstanding(j),0);
+      const overdue = jobs.filter(j=>j.status==='overdue'&&jobOutstanding(j)>0);
+      const overdueTotal = overdue.reduce((s,j)=>s+jobOutstanding(j),0);
       // Pipeline value
       const pipelineVal = jobs.filter(j=>j.type==='SAQ'&&!['paid','lost'].includes(j.status)).reduce((s,j)=>s+Number(j.quoteAmount||0),0);
       // Monthly overhead
@@ -11343,7 +11343,7 @@ const AGENT_REGISTRY = [
       const activeQuotes = jobs.filter(j=>j.type==='SAQ'&&!['paid','lost'].includes(j.status));
       const prompt = `You are the business AI for George Skarmoutsos, sole trader at Sydney Automation Co (C-Bus/Dynalite specialist, Menai NSW). Give a sharp 3-sentence morning brief covering: (1) most urgent money action today, (2) key scheduling note, (3) one commercial opportunity. Be direct, use dollar amounts.
 
-Data: ${overdueJobs.length} overdue invoices (${fmt$(overdueJobs.reduce((s,j)=>s+Number(j.invoiceAmount||0),0))}), ${todayJobs.length} jobs today (${todayJobs.map(j=>gc(j.clientId)?.company||j.jobNumber).join(', ')||'none'}), ${activeQuotes.length} active quotes (${fmt$(activeQuotes.reduce((s,j)=>s+Number(j.quoteAmount||0),0))}), ${jobs.filter(j=>j.status==='approved'&&!j.depositPaidDate&&j.depositAmount).length} deposits pending.`;
+Data: ${overdueJobs.length} overdue invoices (${fmt$(overdueJobs.reduce((s,j)=>s+jobOutstanding(j),0))}), ${todayJobs.length} jobs today (${todayJobs.map(j=>gc(j.clientId)?.company||j.jobNumber).join(', ')||'none'}), ${activeQuotes.length} active quotes (${fmt$(activeQuotes.reduce((s,j)=>s+Number(j.quoteAmount||0),0))}), ${jobs.filter(j=>j.status==='approved'&&!j.depositPaidDate&&j.depositAmount).length} deposits pending.`;
 
       try {
         const brief = await aiCallRaw(prompt, '', 300).catch(()=>'');
@@ -18762,7 +18762,7 @@ function _mobMarkPaid(jobId){
 }
 
 function _renderFieldOverdue(){
-  const overdue = jobs.filter(j=>['invoiced','overdue'].includes(j.status)&&j.invoiceAmount).slice(0,3);
+  const overdue = jobs.filter(j=>['invoiced','overdue'].includes(j.status)&&jobOutstanding(j)>0).slice(0,3);
   if(overdue.length===0) return '';
   const rows = overdue.map(j=>{
     const c = gc(j.clientId);
@@ -19280,7 +19280,7 @@ function deleteTimesheet(i){
 // ─── STARTUP ALERTS ───────────────────────────────────────────────────────────
 function showStartupAlerts(){
   const today_str = today();
-  const overdue = jobs.filter(j=>['invoiced','overdue'].includes(j.status)&&j.invoiceDue&&j.invoiceDue<today_str);
+  const overdue = jobs.filter(j=>['invoiced','overdue'].includes(j.status)&&j.invoiceDue&&j.invoiceDue<today_str&&jobOutstanding(j)>0);
   const balanceDue = getBalanceDueJobs();
   const dueRecurring = recurringJobs.filter(r=>r.active&&r.nextDue&&r.nextDue<=today_str);
   const dueSoon = recurringJobs.filter(r=>{
@@ -19296,7 +19296,7 @@ function showStartupAlerts(){
     const bdTotal = balanceDue.reduce((s,j)=>s+(calcBalanceRemaining(j)?.balance||0),0);
     msgs.push(`💰 ${balanceDue.length} job${balanceDue.length>1?'s':''} with balance remaining — ${fmt$(bdTotal)} due on completion`);
   }
-  if(overdue.length) msgs.push(`⚠️ ${overdue.length} overdue invoice${overdue.length>1?'s':''} — total ${fmt$(overdue.reduce((s,j)=>s+Number(j.invoiceAmount||0),0))}`);
+  if(overdue.length) msgs.push(`⚠️ ${overdue.length} overdue invoice${overdue.length>1?'s':''} — total ${fmt$(overdue.reduce((s,j)=>s+jobOutstanding(j),0))}`);
   if(dueRecurring.length) msgs.push(`↺ ${dueRecurring.length} recurring job${dueRecurring.length>1?'s':''} due now`);
   if(dueSoon.length) msgs.push(`📅 ${dueSoon.length} recurring job${dueSoon.length>1?'s':''} due within 7 days`);
 
@@ -19698,7 +19698,7 @@ function renderMobile(){
           <div style="font-size:10px;opacity:0.7;text-transform:uppercase">Unpaid</div>
         </div>
         <div style="background:rgba(255,255,255,0.1);border-radius:10px;padding:10px;text-align:center">
-          <div style="font-size:20px;font-weight:800;color:#10b981">${fmt$(jobs.filter(j=>['invoiced','overdue'].includes(j.status)).reduce((s,j)=>s+Number(j.invoiceAmount||0),0))}</div>
+          <div style="font-size:20px;font-weight:800;color:#10b981">${fmt$(jobs.filter(j=>['invoiced','overdue'].includes(j.status)&&!(j.jobNumber||'').startsWith('SAQ')).reduce((s,j)=>s+jobOutstanding(j),0))}</div>
           <div style="font-size:10px;opacity:0.7;text-transform:uppercase">Outstanding</div>
         </div>
       </div>
