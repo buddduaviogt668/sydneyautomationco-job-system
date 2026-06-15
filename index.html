@@ -9446,9 +9446,9 @@ function renderIncomeTracker(){
     .reduce((s,j)=>s+jobRevenue(j), 0);
 
   const targets = [
-    {label:'Minimum', val:Number(CFG.incomeMin)||0, color:'#ef4444'},
-    {label:'Comfortable', val:Number(CFG.incomeComfort)||0, color:'#f59e0b'},
-    {label:'Stretch', val:Number(CFG.incomeStretch)||0, color:'#10b981'},
+    {label:'Minimum', val:(Number(CFG.incomeMin)||0)/12, color:'#ef4444'},
+    {label:'Comfortable', val:(Number(CFG.incomeComfort)||0)/12, color:'#f59e0b'},
+    {label:'Stretch', val:(Number(CFG.incomeStretch)||0)/12, color:'#10b981'},
   ].filter(t=>t.val>0);
 
   if(targets.length===0) return '';
@@ -11390,7 +11390,7 @@ Data: ${overdueJobs.length} overdue invoices (${fmt$(overdueJobs.reduce((s,j)=>s
       const mthInvoiced = jobs
         .filter(j=>j.type==='SAI'&&(j.invoiceDate||j.createdAt||'')>=mStart&&(j.invoiceDate||j.createdAt||'')<=mEnd)
         .reduce((s,j)=>s+(Number(j.invoiceAmount)||0),0);
-      const comfortable = Number(CFG.incomeComfort)||0;
+      const comfortable = (Number(CFG.incomeComfort)||0)/12;
       if(!comfortable) return;
       const onTrackNeeds = comfortable * pctThrough;
       const shortfall = onTrackNeeds - mthInvoiced;
