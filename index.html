@@ -457,6 +457,11 @@
     <button class="ai-quick-btn" onclick="aiAsk('Give me 5 ways to increase my gross margin on the next 3 jobs I quote. Be specific to lighting control and smart automation work.')">📈 Margin Booster</button>
     <button class="ai-quick-btn" onclick="aiAsk('Draft me a firm but professional follow-up email for my longest-outstanding quote. Pull the client and amount from my data. Sign off as george@sydneyautomationco.com.au.')">✉ Draft Chase Email</button>
     <button class="ai-quick-btn" onclick="aiAsk('Am I on track to hit my income target this FY? At my current revenue run rate, what will I earn by 30 June? What do I need to invoice per month from now on to hit my comfortable target? Give specific numbers.')">🎯 Income Trajectory</button>
+    <div style="font-size:10px;font-weight:800;color:#f59e0b;text-transform:uppercase;letter-spacing:0.6px;margin:10px 0 6px">⚡ Agent Actions</div>
+    <button class="ai-quick-btn" onclick="aiAsk('Show me all active quotes that are over 14 days old and haven\'t been won. For each one, [[ACTION: sendWhatsApp: {"jobId_or_number":"JOB_NUMBER","message":"Just checking in on the quote I sent — any questions?"}]] to chase them up.')">📋 Chase Stale Quotes</button>
+    <button class="ai-quick-btn" onclick="aiAsk('Give me my schedule for today. List all jobs, their statuses, and clients. If any are overdue, [[ACTION: sendWhatsApp: {"phone":"CLIENT_PHONE"}]] to let them know I\'m on my way.')">📅 Today's Schedule</button>
+    <button class="ai-quick-btn" onclick="aiAsk('Create a new SAQ quote for [[ACTION: findClients: {"search":"CLIENT_NAME"}]] with scope and amount I specify. Then [[ACTION: sendQuoteEmail: {"jobId_or_number":"NEW_JOB_NUMBER"}]] when ready.')">📝 New Quote + Email</button>
+    <button class="ai-quick-btn" onclick="aiAsk('What\'s my current pipeline health? List every active quote with value, age, and status. Flag quotes over 30 days old. Give me a specific action plan.')">🔍 Pipeline Deep Dive</button>
   </div>
   <div id="ai-messages" style="flex:1;overflow-y:auto;padding:14px;display:flex;flex-direction:column;">
     <div class="ai-msg assistant">
@@ -475,7 +480,7 @@
   </div>
   <div style="padding:12px 14px;border-top:1px solid #1e293b;flex-shrink:0">
     <div style="display:flex;gap:8px">
-      <input id="ai-input" type="text" placeholder="Ask about pricing, jobs, clients…" onkeydown="if(event.key==='Enter')aiSend()" style="flex:1;background:#1e293b;border:1px solid #334155;border-radius:8px;color:#e2e8f0;padding:10px 12px;font-size:13px;font-family:'DM Sans',sans-serif">
+      <input id="ai-input" type="text" placeholder="Ask, create, update, send — I can do it all…" onkeydown="if(event.key==='Enter')aiSend()" style="flex:1;background:#1e293b;border:1px solid #334155;border-radius:8px;color:#e2e8f0;padding:10px 12px;font-size:13px;font-family:'DM Sans',sans-serif">
       <button onclick="aiSend()" style="background:#6366f1;border:none;border-radius:8px;color:#fff;padding:10px 14px;font-size:13px;font-weight:700;cursor:pointer">↑</button>
     </div>
     <div id="ai-status-bar" style="font-size:10px;color:#334155;margin-top:6px;text-align:center;cursor:pointer" onclick="goto('settings');toggleAIPanel()"><span style="color:#4ade80">Gemini active</span> · Uses your live data</div>
@@ -16799,6 +16804,207 @@ function bookOnDate(d, t){
   },50);
 }
 
+// ─── AI AGENT ACTIONS ─────────────────────────────────────────────────────────
+// The AI can request actions by outputting [[ACTION: name: jsonArgs]] in its response.
+// The system parses these, executes them, and shows results in the chat.
+
+const AI_ACTIONS = {
+  createJob: {
+    desc: 'Create a new job (SAQ quote or SAI job)',
+    args: { clientId_or_name: 'string', type: '"SAQ"|"SAI"', scope: 'string (optional)', amount: 'number (optional)', status: 'string (optional)' },
+    fn: async a => {
+      let cid = a.clientId_or_name;
+      if (!jobs.some(j=>j.clientId===cid)) {
+        const cl = clients.find(c => (c.company||'').toLowerCase()===a.clientId_or_name.toLowerCase() || (c.name||'').toLowerCase()===a.clientId_or_name.toLowerCase());
+        if (cl) cid = cl.id;
+        else { cid = 'c' + Date.now(); clients.push({id:cid,company:a.clientId_or_name,name:'',phone:'',email:'',createdAt:today()}); }
+      }
+      const jid = 'j' + Date.now();
+      const seq = (STORE.get('counters')||{})['job'] || jobs.length + 1;
+      const jnum = (a.type||'SAQ') + '_' + String(100000 + seq).slice(1);
+      const j = { id:jid, type:a.type||'SAQ', clientId:cid, status:a.status||'lead', jobNumber:jnum, scope:a.scope||'', notes:'', quoteAmount:String(a.amount||0), invoiceAmount:'', createdAt:today(), paidDate:'', invoiceDue:'', invoiceLines:[], quoteDoc:null };
+      jobs.push(j);
+      const c = STORE.get('counters')||{}; c.job = seq + 1; STORE.set('counters',c);
+      save(); return { jobNumber:jnum, id:jid, clientId:cid, message:'Created '+jnum };
+    }
+  },
+  updateJob: {
+    desc: 'Update one or more fields on an existing job. Fields: status, amount, scope, notes, clientId, invoiceAmount, paidDate, invoiceDue',
+    args: { jobId_or_number: 'string (job id or job number like SAI_100045)', status: 'string (optional)', amount: 'number (optional)', scope: 'string (optional)', notes: 'string (optional)' },
+    fn: async a => {
+      const j = jobs.find(x => x.id===a.jobId_or_number || x.jobNumber===a.jobId_or_number);
+      if (!j) throw new Error('Job not found: ' + a.jobId_or_number);
+      const flds = ['status','scope','notes','invoiceAmount','paidDate','invoiceDue'];
+      flds.forEach(f => { if (a[f] !== undefined) j[f] = String(a[f]); });
+      if (a.amount !== undefined) { j.quoteAmount = String(a.amount); if (!j.invoiceAmount) j.invoiceAmount = String(a.amount); }
+      if (a.status==='paid' && !j.paidDate) j.paidDate = today();
+      save(); return { jobNumber:j.jobNumber, changes:a, message:'Updated '+j.jobNumber };
+    }
+  },
+  findJobs: {
+    desc: 'Search jobs by status, client name, date range, or keyword',
+    args: { status: 'string (optional, e.g. "paid","quoted","lead","scheduled","invoiced")', clientName: 'string (optional)', keyword: 'string (optional)', limit: 'number (optional, default 10)' },
+    fn: async a => {
+      let list = [...jobs];
+      if (a.status) list = list.filter(j => j.status===a.status);
+      if (a.clientName) { const lcn = a.clientName.toLowerCase(); list = list.filter(j => { const c=gc(j.clientId); return c && ((c.company||'').toLowerCase().includes(lcn) || (c.name||'').toLowerCase().includes(lcn)); }); }
+      if (a.keyword) { const kw = a.keyword.toLowerCase(); list = list.filter(j => (j.jobNumber||'').toLowerCase().includes(kw) || (j.scope||'').toLowerCase().includes(kw) || (j.notes||'').toLowerCase().includes(kw)); }
+      list.sort((a,b) => (b.createdAt||'').localeCompare(a.createdAt||''));
+      const lim = Math.min(a.limit||10, 25);
+      return list.slice(0, lim).map(j => ({ jobNumber:j.jobNumber, client:(gc(j.clientId)||{}).company||'?', status:j.status, amount:j.quoteAmount||j.invoiceAmount||0, scope:(j.scope||'').substring(0,80), createdAt:j.createdAt, id:j.id }));
+    }
+  },
+  getJob: {
+    desc: 'Get full details of a specific job',
+    args: { jobId_or_number: 'string' },
+    fn: async a => {
+      const j = jobs.find(x => x.id===a.jobId_or_number || x.jobNumber===a.jobId_or_number);
+      if (!j) throw new Error('Job not found');
+      const c = gc(j.clientId);
+      const lines = j.invoiceLines||[];
+      return { jobNumber:j.jobNumber, client:c?c.company:'?', status:j.status, amount:j.quoteAmount, scope:j.scope, notes:j.notes, createdAt:j.createdAt, paidDate:j.paidDate, invoiceLines:lines.length + ' line(s)', quoteDocLines:(j.quoteDoc?.lines||[]).length + ' item(s)' };
+    }
+  },
+  createClient: {
+    desc: 'Add a new client/contact',
+    args: { company: 'string', name: 'string (optional)', phone: 'string (optional)', email: 'string (optional)', address: 'string (optional)' },
+    fn: async a => {
+      const cid = 'c' + Date.now();
+      clients.push({ id:cid, company:a.company||'', name:a.name||'', phone:a.phone||'', email:a.email||'', address:a.address||'', createdAt:today() });
+      save(); return { id:cid, company:a.company, name:a.name, message:'Client "'+a.company+'" created' };
+    }
+  },
+  findClients: {
+    desc: 'Search clients by name, company, or keyword',
+    args: { search: 'string (optional)', limit: 'number (optional, default 10)' },
+    fn: async a => {
+      let list = [...clients];
+      if (a.search) { const s=a.search.toLowerCase(); list = list.filter(c => (c.company||'').toLowerCase().includes(s) || (c.name||'').toLowerCase().includes(s) || (c.phone||'').includes(s)); }
+      return list.slice(0, Math.min(a.limit||10, 25)).map(c => ({ id:c.id, company:c.company, name:c.name, phone:c.phone, email:c.email, jobCount:jobs.filter(j=>j.clientId===c.id).length }));
+    }
+  },
+  getSummary: {
+    desc: 'Get a complete business snapshot: revenue, pipeline, overdue, cash position',
+    args: {},
+    fn: async a => {
+      const paidJobs = jobs.filter(j=>j.status==='paid');
+      const activeJobs = jobs.filter(j=>!['paid','cancelled','lost'].includes(j.status));
+      const overdue = jobs.filter(j=>['invoiced','overdue'].includes(j.status) && j.invoiceDue && new Date(j.invoiceDue+'T00:00:00')<new Date());
+      const totalOutstanding = jobs.filter(j=>['invoiced','overdue'].includes(j.status)).reduce((s,j)=>s+jobOutstanding(j),0);
+      const pipelineJobs = jobs.filter(j=>['quoted','lead','booking','approved','deposit_due','deposit_paid','parts_ordered','scheduled','work_order','po_received'].includes(j.status));
+      const pipelineValue = pipelineJobs.reduce((s,j)=>s+(Number(j.quoteAmount||j.invoiceAmount)||0),0);
+      const ytdRev = paidJobs.filter(j=>j.paidDate&&j.paidDate>=(new Date().getFullYear()-1)+'-07-01').reduce((s,j)=>s+jobRevenue(j),0);
+      return { activeJobs:activeJobs.length, pipelineJobs:pipelineJobs.length, pipelineValue:'$'+pipelineValue.toFixed(2), overdueInvoices:overdue.length, totalOutstanding:'$'+totalOutstanding.toFixed(2), ytdRevenue:'$'+ytdRev.toFixed(2), totalClients:clients.length, totalJobs:jobs.length };
+    }
+  },
+  sendQuoteEmail: {
+    desc: 'Open your email client to send a quote to a client. Pre-fills the email with job details.',
+    args: { jobId_or_number: 'string', emailAddress: 'string (optional, defaults to client email)' },
+    fn: async a => {
+      const j = jobs.find(x => x.id===a.jobId_or_number || x.jobNumber===a.jobId_or_number);
+      if (!j) throw new Error('Job not found');
+      const c = gc(j.clientId);
+      const email = a.emailAddress || (c?c.email:'');
+      if (!email) throw new Error('No email address for this client');
+      const sub = 'Quote ' + j.jobNumber + ' — ' + (c?c.company:'');
+      const body = 'Hi ' + (c?c.name:'') + ',\n\nPlease find attached our quote ' + j.jobNumber + ' for ' + (j.scope||'the agreed scope') + '.\n\nTotal: $' + (j.quoteAmount||'—') + '\n\nRegards,\nGeorge Skarmoutsos\nSydney Automation Co.\n0422 469 739';
+      window.open('mailto:'+email+'?subject='+encodeURIComponent(sub)+'&body='+encodeURIComponent(body));
+      return { message:'Email client opened for '+email, to:email, subject:sub };
+    }
+  },
+  sendWhatsApp: {
+    desc: 'Open WhatsApp to message a client about a job or general message',
+    args: { phone: 'string', message: 'string (optional)', jobId_or_number: 'string (optional, fills message from job)' },
+    fn: async a => {
+      let msg = a.message || '';
+      if (a.jobId_or_number) {
+        const j = jobs.find(x => x.id===a.jobId_or_number || x.jobNumber===a.jobId_or_number);
+        if (j) { const c=gc(j.clientId); msg = 'Hi '+(c?c.name:'')+', regarding ' + j.jobNumber + ' ('+(j.scope||'')+'): ' + (a.message||''); }
+      }
+      const phone = a.phone.replace(/[^0-9]/g,'');
+      if (!phone) throw new Error('Phone number required');
+      window.open('https://wa.me/'+phone+(msg?'?text='+encodeURIComponent(msg):''));
+      return { message:'WhatsApp opened for ' + phone };
+    }
+  },
+  getSchedule: {
+    desc: 'Get today\'s or this week\'s scheduled jobs',
+    args: { period: '"today"|"week" (default "today")' },
+    fn: async a => {
+      const t = today();
+      const jobsToday = jobs.filter(j=>j.scheduledDate===t && !['paid','lost'].includes(j.status));
+      if (a.period==='week') {
+        const weekEnd = new Date(Date.now()+7*86400000).toISOString().split('T')[0];
+        const weekJobs = jobs.filter(j=>j.scheduledDate&&j.scheduledDate>=t&&j.scheduledDate<=weekEnd&&!['paid','lost'].includes(j.status));
+        return weekJobs.map(j=>({ jobNumber:j.jobNumber, client:(gc(j.clientId)||{}).company||'?', scheduled:j.scheduledDate, status:j.status }));
+      }
+      return jobsToday.map(j=>({ jobNumber:j.jobNumber, client:(gc(j.clientId)||{}).company||'?', status:j.status }));
+    }
+  },
+  listQuotes: {
+    desc: 'List all active quotes (SAQ jobs that are not won/lost) with their values',
+    args: { status: 'string (optional, e.g. "quoted","lead","approved")', limit: 'number (optional, default 10)' },
+    fn: async a => {
+      let qs = jobs.filter(j=>j.type==='SAQ' && !['paid','lost'].includes(j.status));
+      if (a.status) qs = qs.filter(j=>j.status===a.status);
+      qs.sort((a,b)=>(Number(b.quoteAmount)||0)-(Number(a.quoteAmount)||0));
+      return qs.slice(0, Math.min(a.limit||10, 25)).map(j=>({ jobNumber:j.jobNumber, client:(gc(j.clientId)||{}).company||'?', amount:'$'+(j.quoteAmount||'0'), status:j.status, daysOpen:j.createdAt?Math.floor((new Date()-new Date(j.createdAt+'T00:00:00'))/86400000):0 }));
+    }
+  }
+};
+
+// Execute an action from [[ACTION: name: json]] syntax
+async function aiExecAction(actionName, argStr) {
+  const def = AI_ACTIONS[actionName];
+  if (!def) throw new Error('Unknown action: ' + actionName);
+  let args = {};
+  try { args = JSON.parse(argStr); } catch(e) { args = { _raw: argStr }; }
+  return await def.fn(args);
+}
+
+// Parse AI response for [[ACTION: ...]] blocks, execute them, return {text, results}
+async function aiParseAndExecActions(text) {
+  const parts = [];
+  const results = [];
+  let lastIdx = 0;
+  const regex = /\[\[ACTION:\s*(\w+)\s*:\s*(\{.*?\}|[^\]]+)\]\]/g;
+  let m;
+  while ((m = regex.exec(text)) !== null) {
+    parts.push(text.substring(lastIdx, m.index));
+    const actionName = m[1];
+    const argStr = m[2];
+    try {
+      const r = await aiExecAction(actionName, argStr);
+      results.push({ action:actionName, success:true, result:r });
+      parts.push('✅ **Action: ' + actionName + '** — ' + (r.message||'Done') + '\n');
+    } catch(e) {
+      results.push({ action:actionName, success:false, error:e.message });
+      parts.push('❌ **Action: ' + actionName + '** failed — ' + e.message + '\n');
+    }
+    lastIdx = m.index + m[0].length;
+  }
+  parts.push(text.substring(lastIdx));
+  return { text: parts.join('').trim(), results };
+}
+
+// Build the actions system prompt for the AI
+function aiActionsPrompt() {
+  let p = '\n\nYou are an AI assistant embedded inside Sydney Automation Co.\'s job management system. You have live access to ALL business data.\n\n';
+  p += '## CAPABILITIES — You can execute actions by outputting: [[ACTION: actionName: {"arg":"value"}]]\n\n';
+  p += 'Available actions:\n';
+  Object.entries(AI_ACTIONS).forEach(([name, def]) => {
+    p += '- **' + name + '** — ' + def.desc + '\n';
+    if (Object.keys(def.args).length) {
+      p += '  Args: ' + JSON.stringify(def.args) + '\n';
+    }
+  });
+  p += '\nWhen the user asks you to DO something (create, update, change, send, find, show), use the appropriate [[ACTION: ...]] block. ';
+  p += 'You can chain multiple actions. Always explain what you did.\n';
+  p += 'When the user asks a question or for analysis, just answer normally without actions.\n';
+  p += 'Available data: ' + jobs.length + ' jobs, ' + clients.length + ' clients, ' + PARTS_DB.length + ' parts in database.\n';
+  return p;
+}
+
 // ─── AI ENGINE ────────────────────────────────────────────────────────────────
 
 let aiPanelOpen = false;
@@ -17121,8 +17327,17 @@ async function aiCall(userMessage){
     // Trim context to avoid token overflow on free-tier providers (safe ~6k chars)
     const MAX_CTX = 6000;
     const trimmedContext = context.length > MAX_CTX ? context.slice(0, MAX_CTX) + '\n...[trimmed]' : context;
-    const fullPrompt = (trimmedContext?'Business context:\n'+trimmedContext+'\n\n':'')+(historyText?historyText+'\n\n':'')+userMessage;
-    return await aiCallRaw(fullPrompt, '', 1500);
+    const actionsPrompt = aiActionsPrompt();
+    const systemPrompt = actionsPrompt + '\n\nBusiness context:\n' + trimmedContext;
+    const fullPrompt = (historyText?historyText+'\n\n':'')+userMessage;
+    const raw = await aiCallRaw(fullPrompt, systemPrompt, 2000);
+    // Parse and execute any [[ACTION: ...]] blocks in the response
+    const { text, results } = await aiParseAndExecActions(raw);
+    if (results.length > 0) {
+      // Re-save after any mutations
+      save();
+    }
+    return text;
   } catch(e) {
     if(e.message.includes('quota') || e.message.includes('rate')) throw new Error('Rate limited. Wait 30s and retry, or switch providers in Settings → AI.');
     if(e.message.includes('key') || e.message.includes('401') || e.message.includes('403')) throw new Error('API key invalid. Check Settings → AI Configuration.');
