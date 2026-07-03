@@ -17345,6 +17345,27 @@ async function aiCall(userMessage){
     throw e;
   }
 }
+// Add a message to the AI chat panel
+function addAIMessage(role, content) {
+  const el = document.getElementById('ai-messages');
+  if (!el) return;
+  const div = document.createElement('div');
+  div.className = 'ai-msg ' + role;
+  div.innerHTML = content + '\n';
+  el.appendChild(div);
+  el.scrollTop = el.scrollHeight;
+}
+// Show a typing indicator and return the element for later removal
+function showAITyping() {
+  const el = document.getElementById('ai-messages');
+  if (!el) return null;
+  const div = document.createElement('div');
+  div.className = 'ai-msg assistant typing';
+  div.innerHTML = '✦ <em>thinking...</em>';
+  el.appendChild(div);
+  el.scrollTop = el.scrollHeight;
+  return div;
+}
 async function aiAsk(question){
   const key = getActiveKey();
   if(!key){
