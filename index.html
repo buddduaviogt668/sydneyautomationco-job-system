@@ -1773,6 +1773,10 @@ const save = () => {
   STORE.set('kmlog',kmLog);
   STORE.set('expenses',expenses);
   STORE.set('taxman',taxManual);
+  STORE.set('cfg',CFG);
+  STORE.set('partsdb',PARTS_DB);
+  STORE.set('recurring',recurringJobs);
+  STORE.set('timesheets',timesheets);
   saveToFile(); // async, non-blocking
   showSaveFlash();
   // Push to Supabase (non-blocking) — track failures
@@ -2184,7 +2188,7 @@ const CFG_DEFAULTS = {
     'All work is guaranteed for 90 days from date of service.',
     'Queries must be raised within 7 days of invoice date.',
   ],
-  markup:0, supplierMargin:0.10, gst:0.10,
+  markup:0, supplierMargin:0.10, gst:0,
   labourRate:160, callout:100, minHours:2,
   defaultKm:37, atoRate:0.88, defaultTolls:12.50,
   jobsMonthOverride:null,
@@ -2325,7 +2329,7 @@ function unlockBankDetails(){
 }
 
 // ─── DYNAMIC PRICING HELPERS ─────────────────────────────────────────────────
-function partYourCost(p){ return p.buyPrice * (1 + CFG.supplierMargin) * (1 + CFG.gst); }
+function partYourCost(p){ return p && p.buyPrice ? p.buyPrice * (1 + CFG.supplierMargin) : 0; }
 function partSellPrice(p){ return partYourCost(p) / (1 - CFG.markup); }
 function qbSellPriceAt(p, m){ return partYourCost(p) / (1 - m); }
 function overheadMonthlyTotal(){ return CFG.overheads.reduce((s,o)=>s+(Number(o.monthly)||0),0); }
@@ -2422,16 +2426,12 @@ function goto(s){
 // SAQ records are QUOTES only — revenue is always tracked via SAI records.
 function jobRevenue(j) {
   if ((j.jobNumber || '').startsWith('SAQ') || j.type === 'SAQ') return 0;
-  const dep = Number(j.depositAmount) || 0;
-  const inv = Number(j.invoiceAmount) || 0;
-  const quote = Number(j.quoteAmount) || 0;
-  if (dep > 0 && inv > 0) {
-    if (Math.abs((dep + inv) - quote) < 0.01) return quote;
-    if (inv < quote * 0.9) return dep + inv;
-    return inv;
-  }
-  if (inv > 0) return inv;
-  return quote;
+  if (j.status !== 'paid') return 0;
+  const dep = Math.max(0, Number(j.depositAmount) || 0);
+  const inv = Math.max(0, Number(j.invoiceAmount) || 0);
+  const quote = Math.max(0, Number(j.quoteAmount) || 0);
+  const collected = dep + inv;
+  return collected > 0 ? Math.min(collected, quote) : quote;
 }
 
 // ─── JOB OUTSTANDING HELPER ──────────────────────────────────────────────────
@@ -4186,8 +4186,9 @@ function _applyStatus(j, newStatus){
   }
   if(newStatus==='deposit_paid' && !j.depositDate) j.depositDate=today();
   if(newStatus==='deposit_paid' && !j.depositAmount && j.quoteAmount){
-    j.depositAmount=(Number(j.quoteAmount)*0.5).toFixed(2);
-    showToast('Deposit defaulted to 50% of quote — update in job detail if different','warn');
+    const depPct=effectiveDepositPct(j);
+    j.depositAmount=(Number(j.quoteAmount)*depPct/100).toFixed(2);
+    showToast('Deposit defaulted to '+depPct+'% of quote — update in job detail if different','info');
   }
   if(newStatus==='parts_ordered' && !j.partsOrderDate) j.partsOrderDate=today();
   if(newStatus==='scheduled' && j.scheduledDate && j.clientId){
@@ -5999,7 +6000,6 @@ function markPaid(id){
   j.status='paid';
   j.paidDate=today();
   if(!j.invoiceNumber) j.invoiceNumber=j.jobNumber;
-  if(!j.invoiceAmount && j.quoteAmount) j.invoiceAmount=j.quoteAmount;
   logActivity(id,'✓ Marked paid — $'+(j.invoiceAmount||j.quoteAmount||'?'));
   save();
   renderMain();
@@ -6140,7 +6140,7 @@ function renderParts(){
           </div>
         </div>`).join('')}
     </div>
-    <div style="margin-top:10px;font-size:11px;color:#94a3b8">Buy Price (ex GST) · Your Cost = Buy × ${((1+CFG.supplierMargin)*(1+CFG.gst)).toFixed(2)}× · Sell Price = Your Cost ÷ (1 − ${Math.round(CFG.markup*100)}%) · <button onclick="goto('settings')" style="background:none;border:none;font-size:11px;color:#1e3a5f;font-weight:600;cursor:pointer;padding:0">Adjust margins in Settings →</button></div>`;
+    <div style="margin-top:10px;font-size:11px;color:#94a3b8">Buy Price · Your Cost = Buy × ${(1+CFG.supplierMargin).toFixed(2)}× · Sell Price = Your Cost ÷ (1 − ${Math.round(CFG.markup*100)}%) · GST not registered · <button onclick="goto('settings')" style="background:none;border:none;font-size:11px;color:#1e3a5f;font-weight:600;cursor:pointer;padding:0">Adjust margins in Settings →</button></div>`;
   }
   else if(ptab==='import'){
     tabContent=`
@@ -6785,7 +6785,7 @@ function getOrderLinesBySupplier(){
 
 function supplierOrderHTML(supName){
   const bySupplier=getOrderLinesBySupplier();const sup=bySupplier[supName];if(!sup)return'';
-  const supInfo=(CFG.suppliers||[]).find(s=>s.name===supName)||{};const gstAmt=sup.total*CFG.gst;
+  const supInfo=(CFG.suppliers||[]).find(s=>s.name===supName)||{};const gstAmt=sup.total*0.1;
   return `<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Purchase Order — ${esc(supName)}</title>
   <style>*{box-sizing:border-box;margin:0;padding:0}body{font-family:'Helvetica Neue',Arial,sans-serif;font-size:13px;color:#1a1a1a;padding:0;max-width:900px;margin:auto}.header{display:flex;justify-content:space-between;align-items:center;background:#0e1f3d;padding:24px 32px}.sub-header{background:#1a2e52;padding:10px 32px;display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;font-size:11px;color:rgba(255,255,255,0.65)}.body-pad{padding:0 30px 30px 30px}h2{font-size:18px;font-weight:800;color:#0e1f3d;margin-bottom:4px}table{width:100%;border-collapse:collapse;font-size:12px;margin-bottom:16px}th{background:#0e1f3d;color:#fff;padding:8px 12px;text-align:left;font-weight:600}td{padding:7px 12px;border-bottom:1px solid #e2e8f0}tr:nth-child(even) td{background:#f8fafc}.footer{text-align:center;font-size:10px;color:#94a3b8;border-top:1px solid #e2e8f0;padding-top:12px;margin-top:24px}@media print{body{padding:0}}</style>
   <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@900&display=swap" rel="stylesheet">
@@ -8067,8 +8067,8 @@ function openVisualQuote(jobId) {
     validDate: savedData?.validDate || valid30,
     scopeText: savedData?.scopeText || (j.description || j.scope || ''),
     items: savedData?.items || (initItems.length > 0 ? initItems : [{ num: '1.', desc: '', qty: '', unit: '', amount: '', partNumber: '' }]),
-    gstEnabled: savedData?.gstEnabled || false,
-    gstAmt: savedData?.gstAmt || '$0.00',
+    gstEnabled: false,
+    gstAmt: '$0.00',
     grandTotal: savedData?.grandTotal || (() => {
       const calcTotal = initItems.reduce((s, item) => s + (parseFloat(item.amount) || 0), 0);
       if (calcTotal > 0) return '$' + calcTotal.toLocaleString('en-AU', {minimumFractionDigits:2,maximumFractionDigits:2});
@@ -8206,12 +8206,7 @@ function openVisualQuote(jobId) {
     .vq-part-dd-desc { flex:1;color:#334155;white-space:nowrap;overflow:hidden;text-overflow:ellipsis; }
     .vq-part-dd-price { color:#10b981;font-weight:700;white-space:nowrap; }
     /* GST TOGGLE */
-    .vq-toggle { display:inline-flex;align-items:center;gap:6px;cursor:pointer;font-family:'Barlow Condensed',sans-serif;font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;padding:8px 14px;border:1.5px solid #d8dde6;border-radius:4px;background:#fff;color:#6b7a94;transition:all .15s; }
-    .vq-toggle.active { background:#1e2d4e;border-color:#1e2d4e;color:#fff; }
-    .vq-toggle-knob { width:28px;height:16px;border-radius:8px;background:#d8dde6;position:relative;transition:background .2s;flex-shrink:0; }
-    .vq-toggle-knob::after { content:'';position:absolute;top:2px;left:2px;width:12px;height:12px;border-radius:50%;background:#fff;transition:transform .2s; }
-    .vq-toggle.active .vq-toggle-knob { background:#10b981; }
-    .vq-toggle.active .vq-toggle-knob::after { transform:translateX(12px); }
+
     /* TOTALS */
     .vq-totals { display: flex; justify-content: flex-end; padding: 0 36px; border-bottom: 1px solid #d8dde6; }
     .vq-tot-inner { min-width: 270px; padding: 14px 0; }
@@ -8254,7 +8249,7 @@ function openVisualQuote(jobId) {
     /* PRINT */
     @media print {
       @page { margin: 0; size: auto; }
-      #vq-toolbar, .vq-add-row, .vq-btn-sm, .vq-part-row, .vq-toggle { display: none !important; }
+      #vq-toolbar, .vq-add-row, .vq-btn-sm, .vq-part-row { display: none !important; }
       #vq-overlay {
         position: fixed !important; top: 0 !important; left: 0 !important;
         width: 100% !important; height: 100% !important; background: #fff !important;
@@ -8276,10 +8271,6 @@ function openVisualQuote(jobId) {
     <button class="vq-btn vq-btn-new" onclick="vqAddRow()">＋ Add Row</button>
     <button class="vq-btn vq-btn-save" onclick="vqSaveToJob('${jobId}')">💾 Save to Job</button>
     <button class="vq-btn vq-btn-print" onclick="window.print()">🖨 Print / PDF</button>
-    <div id="vqGstToggle" class="vq-toggle" onclick="vqToggleGst()">
-      <span class="vq-toggle-knob"></span>
-      <span>GST</span>
-    </div>
     <button class="vq-btn vq-btn-close" onclick="document.getElementById('vq-overlay').remove()">✕ Close</button>
   </div>
 
@@ -8351,10 +8342,6 @@ function openVisualQuote(jobId) {
     <!-- TOTALS -->
     <div class="vq-totals">
       <div class="vq-tot-inner">
-        <div class="vq-t-row" id="vqGstRow" style="display:none">
-          <span>GST (10%)</span>
-          <input class="vq-t-val" id="vqGST" value="$0.00" readonly style="color:#6b7a94" />
-        </div>
         <div class="vq-t-row grand">
           <span>Total Due</span>
           <input class="vq-t-val" id="vqTotal" value="" placeholder="$0.00" />
@@ -8476,13 +8463,8 @@ function openVisualQuote(jobId) {
       if (amtInput) amtInput.value = amt > 0 ? amt.toFixed(2) : '';
       subtotal += amt;
     });
-    const gstOn = document.getElementById('vqGstToggle')?.classList.contains('active');
-    const gstAmt = gstOn ? subtotal * 0.1 : 0;
-    const total = subtotal + gstAmt;
-    const gstEl = document.getElementById('vqGST');
-    if (gstEl) gstEl.value = gstAmt > 0 ? ('$' + gstAmt.toLocaleString('en-AU', {minimumFractionDigits:2,maximumFractionDigits:2})) : '$0.00';
     const totalEl = document.getElementById('vqTotal');
-    if (totalEl) totalEl.value = total > 0 ? ('$' + total.toLocaleString('en-AU', {minimumFractionDigits:2,maximumFractionDigits:2})) : '';
+    if (totalEl) totalEl.value = subtotal > 0 ? ('$' + subtotal.toLocaleString('en-AU', {minimumFractionDigits:2,maximumFractionDigits:2})) : '';
   };
 
   window.vqAddRow = function() {
@@ -8538,25 +8520,14 @@ function openVisualQuote(jobId) {
     vqCalcTotals();
   };
 
-  // ── GST TOGGLE ──────────────────────────────────────────────────────
-  window.vqToggleGst = function() {
-    const tog = document.getElementById('vqGstToggle');
-    if (!tog) return;
-    tog.classList.toggle('active');
-    const row = document.getElementById('vqGstRow');
-    if (row) row.style.display = tog.classList.contains('active') ? '' : 'none';
-    vqCalcTotals();
-  };
-
   window.vqCollect = function() {
     const g = id => (document.getElementById(id) || {}).value || '';
-    const gstOn = document.getElementById('vqGstToggle')?.classList.contains('active') || false;
     return {
       quoteRef: g('vqRef'), clientName: g('vqClientName'), clientContact: g('vqClientContact'),
       clientSite: g('vqClientSite'), clientPhone: g('vqClientPhone'), clientEmail: g('vqClientEmail'),
       jobRef: g('vqJobRef'), siteDate: g('vqSiteDate'), quoteDate: g('vqDate'), validDate: g('vqValidDate'),
       scopeText: g('vqScope'), items: vqGetItems(),
-      gstEnabled: gstOn, gstAmt: g('vqGST'), grandTotal: g('vqTotal'),
+      gstEnabled: false, gstAmt: '$0.00', grandTotal: g('vqTotal'),
       quoteNotes: g('vqNotes'), payBank: g('vqPayBank'), payPayID: g('vqPayID'), payCard: g('vqPayCard'),
       exclusionsText: g('vqExclusions'), termsText: g('vqTerms'), footerLine: g('vqFooter')
     };
@@ -8587,14 +8558,6 @@ function openVisualQuote(jobId) {
     if (el.tagName === 'TEXTAREA') vqAr(el);
   }
 
-  // Restore GST state from saved data
-  if (savedData?.gstEnabled) {
-    const tog = document.getElementById('vqGstToggle');
-    if (tog) { tog.classList.add('active'); }
-    const row = document.getElementById('vqGstRow');
-    if (row) row.style.display = '';
-  }
-
   // Set all fields
   vqSet('vqRef', defaults.quoteRef);
   vqSet('vqClientName', defaults.clientName);
@@ -8608,7 +8571,6 @@ function openVisualQuote(jobId) {
   vqSet('vqDate', defaults.quoteDate);
   vqSet('vqValidDate', defaults.validDate);
   vqSet('vqScope', defaults.scopeText);
-  vqSet('vqGST', defaults.gstAmt);
   vqSet('vqTotal', defaults.grandTotal);
   vqSet('vqNotes', defaults.quoteNotes);
   vqSet('vqPayBank', defaults.payBank);
@@ -12703,7 +12665,7 @@ function renderProfitability(){
 
     // Source 2: Expenses logged against job
     const expCost = (expenses||[])
-      .filter(e=>e.jobRef===j.jobNumber||e.jobRef===j.id)
+      .filter(e=>e.jobId===j.id||e.jobRef===j.jobNumber||e.jobRef===j.id)
       .reduce((s,e)=>s+Number(e.amount||0),0);
 
     // Source 3: Your own labour time (hours logged × effective cost per hour)
@@ -14753,7 +14715,7 @@ body{font-family:'Barlow',sans-serif;background:#c8cdd8;color:#1e2d4e;padding:24
   <div style="display:flex;justify-content:flex-end;padding:0 36px;border-bottom:1px solid #d8dde6">
     <div style="min-width:270px;padding:14px 0">
       <div style="display:flex;justify-content:space-between;align-items:center;gap:40px;padding:5px 0;font-size:13px;color:#6b7a94;border-bottom:1px solid #d8dde6">
-        <span>${qd.gstEnabled?'GST (10%)':'GST (Not registered)'}</span><span>${e(qd.gstAmt||'$0.00')}</span>
+        <span>GST (Not registered)</span><span>$0.00</span>
       </div>
       <div style="display:flex;justify-content:space-between;align-items:center;gap:40px;font-family:'Barlow Condensed',sans-serif;font-size:17px;font-weight:800;letter-spacing:.05em;text-transform:uppercase;color:#1e2d4e;border-top:2px solid #1e2d4e;margin-top:6px;padding-top:10px">
         <span>Total Due</span><span style="color:#f5821f">${e(qd.grandTotal||'')}</span>
@@ -15895,16 +15857,16 @@ function calcAnnualTax(annual, claimTFT){
   let tax = 0;
   if(claimTFT){
     if(annual <= 18200)       tax = 0;
-    else if(annual <= 45000)  tax = (annual - 18200) * 0.19;
-    else if(annual <= 120000) tax = 5092  + (annual - 45000)  * 0.325;
-    else if(annual <= 180000) tax = 29467 + (annual - 120000) * 0.37;
-    else                      tax = 51667 + (annual - 180000) * 0.45;
+    else if(annual <= 45000)  tax = (annual - 18200) * 0.16;
+    else if(annual <= 135000) tax = 4288  + (annual - 45000)  * 0.30;
+    else if(annual <= 190000) tax = 31288 + (annual - 135000) * 0.37;
+    else                      tax = 51638 + (annual - 190000) * 0.45;
   } else {
     // No TFT — higher withholding from $0
-    if(annual <= 45000)       tax = annual * 0.19;
-    else if(annual <= 120000) tax = 8550  + (annual - 45000)  * 0.325;
-    else if(annual <= 180000) tax = 32925 + (annual - 120000) * 0.37;
-    else                      tax = 55125 + (annual - 180000) * 0.45;
+    if(annual <= 45000)       tax = annual * 0.16;
+    else if(annual <= 135000) tax = 7200  + (annual - 45000)  * 0.30;
+    else if(annual <= 190000) tax = 34200 + (annual - 135000) * 0.37;
+    else                      tax = 54550 + (annual - 190000) * 0.45;
   }
   // LITO
   let lito = 0;
@@ -16529,7 +16491,7 @@ function renderExpenses(){
           const cat=expCat(e.taxCat);
           const reimb=needsReimburse(e)&&!e.reimbursed;
           const payLabel=EXP_PAY.find(p=>p.id===e.payMethod)?.label||e.payMethod||'';
-          const linkedJob=e.jobId?jobs.find(j=>j.id===e.jobId):null;
+          const linkedJob=e.jobId?jobs.find(j=>j.id===e.jobId):(e.jobRef?jobs.find(j=>j.jobNumber===e.jobRef):null);
           return `<div style="display:grid;grid-template-columns:90px 1fr 90px 90px 130px 120px 80px 80px;padding:11px 16px;border-bottom:1px solid #f8fafc;align-items:center;background:${reimb?'#fffbeb':'#fff'}">
             <div style="font-size:12px;color:#64748b">${fmtD(e.date)}</div>
             <div>
@@ -16767,7 +16729,7 @@ function exportExpenses(){
   const headers='Date,Description,Category,Amount,Payment Method,Job Ref,Notes,Reimbursed,Receipt';
   const rows=expenses.map(e=>{
     const cat=expCat(e.taxCat);
-    const job=e.jobId?jobs.find(j=>j.id===e.jobId):null;
+    const job=e.jobId?jobs.find(j=>j.id===e.jobId):(e.jobRef?jobs.find(j=>j.jobNumber===e.jobRef):null);
     return [e.date,e.description,cat.label,e.amount,e.payMethod,job?.jobNumber||'',e.notes||'',e.reimbursed?'Yes':'No',e.receiptData?'Yes':'No']
       .map(v=>'"'+String(v||'').replace(/"/g,'""')+'"').join(',');
   }).join('\n');
@@ -16892,7 +16854,7 @@ const AI_ACTIONS = {
       const overdue = jobs.filter(j=>['invoiced','overdue'].includes(j.status) && j.invoiceDue && new Date(j.invoiceDue+'T00:00:00')<new Date());
       const totalOutstanding = jobs.filter(j=>['invoiced','overdue'].includes(j.status)).reduce((s,j)=>s+jobOutstanding(j),0);
       const pipelineJobs = jobs.filter(j=>['quoted','lead','booking','approved','deposit_due','deposit_paid','parts_ordered','scheduled','work_order','po_received'].includes(j.status));
-      const pipelineValue = pipelineJobs.reduce((s,j)=>s+(Number(j.quoteAmount||j.invoiceAmount)||0),0);
+      const pipelineValue = pipelineJobs.reduce((s,j)=>s+Math.max(Number(j.quoteAmount)||0,Number(j.invoiceAmount)||0),0);
       const ytdRev = paidJobs.filter(j=>j.paidDate&&j.paidDate>=(new Date().getFullYear()-1)+'-07-01').reduce((s,j)=>s+jobRevenue(j),0);
       return { activeJobs:activeJobs.length, pipelineJobs:pipelineJobs.length, pipelineValue:'$'+pipelineValue.toFixed(2), overdueInvoices:overdue.length, totalOutstanding:'$'+totalOutstanding.toFixed(2), ytdRevenue:'$'+ytdRev.toFixed(2), totalClients:clients.length, totalJobs:jobs.length };
     }
