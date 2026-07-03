@@ -8010,7 +8010,7 @@ function openVisualQuote(jobId) {
       const qty = Number(l.qty) || 1;
       const unit = Number(l.unit) || 0;
       const amt = qty * unit;
-      initItems.push({ num: (idx++) + '.', desc: l.desc || '', qty: String(qty), unit: unit > 0 ? unit.toFixed(2) : '', amount: amt > 0 ? amt.toFixed(2) : '' });
+      initItems.push({ num: (idx++) + '.', desc: l.desc || '', partNumber: l.partNumber || '', qty: String(qty), unit: unit > 0 ? unit.toFixed(2) : '', amount: amt > 0 ? amt.toFixed(2) : '' });
     });
   } else if (_QS && _QS.jobId === jobId && _QS.lines && _QS.lines.length > 0) {
     let idx = 1;
@@ -8018,7 +8018,7 @@ function openVisualQuote(jobId) {
       const qty = Number(l.qty) || 1;
       const unit = Number(l.unit) || 0;
       const amt = qty * unit;
-      initItems.push({ num: (idx++) + '.', desc: l.desc || '', qty: String(qty), unit: unit > 0 ? unit.toFixed(2) : '', amount: amt > 0 ? amt.toFixed(2) : '' });
+      initItems.push({ num: (idx++) + '.', desc: l.desc || '', partNumber: l.partNumber || '', qty: String(qty), unit: unit > 0 ? unit.toFixed(2) : '', amount: amt > 0 ? amt.toFixed(2) : '' });
     });
   } else if (QB.items && QB.items.length > 0) {
     let idx = 1;
@@ -8028,16 +8028,16 @@ function openVisualQuote(jobId) {
       const qty = Number(item.qty) || 1;
       const amt = qty * unit;
       const desc = (p.partNumber ? p.partNumber + ' – ' : '') + (p.description || '');
-      initItems.push({ num: (idx++) + '.', desc, qty: String(qty), unit: unit > 0 ? unit.toFixed(2) : '', amount: amt > 0 ? amt.toFixed(2) : '' });
+      initItems.push({ num: (idx++) + '.', desc, partNumber: p.partNumber || '', qty: String(qty), unit: unit > 0 ? unit.toFixed(2) : '', amount: amt > 0 ? amt.toFixed(2) : '' });
     });
     QB.labour.forEach(l => {
       const qty = Number(l.hours) || 1;
       const unit = Number(l.rate) || 0;
       const amt = qty * unit;
-      initItems.push({ num: (idx++) + '.', desc: l.desc || 'Labour', qty: String(qty), unit: unit > 0 ? unit.toFixed(2) : '', amount: amt > 0 ? amt.toFixed(2) : '' });
+      initItems.push({ num: (idx++) + '.', desc: l.desc || 'Labour', partNumber: '', qty: String(qty), unit: unit > 0 ? unit.toFixed(2) : '', amount: amt > 0 ? amt.toFixed(2) : '' });
     });
     if (QB.callout > 0) {
-      initItems.push({ num: (idx++) + '.', desc: 'Callout / Site Visit', qty: '1', unit: QB.callout.toFixed(2), amount: QB.callout.toFixed(2) });
+      initItems.push({ num: (idx++) + '.', desc: 'Callout / Site Visit', partNumber: '', qty: '1', unit: QB.callout.toFixed(2), amount: QB.callout.toFixed(2) });
     }
   }
 
@@ -8061,7 +8061,8 @@ function openVisualQuote(jobId) {
     quoteDate: savedData?.quoteDate || today,
     validDate: savedData?.validDate || valid30,
     scopeText: savedData?.scopeText || (j.description || j.scope || ''),
-    items: savedData?.items || (initItems.length > 0 ? initItems : [{ num: '1.', desc: '', qty: '', unit: '', amount: '' }]),
+    items: savedData?.items || (initItems.length > 0 ? initItems : [{ num: '1.', desc: '', qty: '', unit: '', amount: '', partNumber: '' }]),
+    gstEnabled: savedData?.gstEnabled || false,
     gstAmt: savedData?.gstAmt || '$0.00',
     grandTotal: savedData?.grandTotal || (() => {
       const calcTotal = initItems.reduce((s, item) => s + (parseFloat(item.amount) || 0), 0);
@@ -8189,6 +8190,23 @@ function openVisualQuote(jobId) {
       border: 1.5px dashed #d8dde6; border-radius: 3px; background: none; color: #6b7a94;
       cursor: pointer; margin-right: 8px; transition: all .15s; }
     .vq-btn-sm:hover { border-color: #f5821f; color: #1e2d4e; }
+    /* PART SEARCH */
+    .vq-part-row { display:flex;gap:4px;margin-bottom:4px;align-items:center;position:relative; }
+    .vq-part-input { font-size:11px;padding:2px 6px;border:1px solid #d8dde6;border-radius:3px;width:100%;font-family:'DM Mono',monospace;background:#fff;outline:none; }
+    .vq-part-input:focus { border-color:#f5821f; }
+    .vq-part-dd { display:none;position:absolute;top:100%;left:0;right:0;z-index:100;background:#fff;border:1px solid #d8dde6;border-radius:4px;box-shadow:0 4px 12px rgba(0,0,0,.12);max-height:200px;overflow-y:auto; }
+    .vq-part-dd-item { padding:6px 8px;cursor:pointer;display:flex;gap:8px;align-items:center;border-bottom:1px solid #f1f5f9;font-size:11px; }
+    .vq-part-dd-item:hover { background:#f7f8fa; }
+    .vq-part-dd-num { font-family:'DM Mono',monospace;color:#6366f1;font-weight:600;white-space:nowrap;min-width:80px; }
+    .vq-part-dd-desc { flex:1;color:#334155;white-space:nowrap;overflow:hidden;text-overflow:ellipsis; }
+    .vq-part-dd-price { color:#10b981;font-weight:700;white-space:nowrap; }
+    /* GST TOGGLE */
+    .vq-toggle { display:inline-flex;align-items:center;gap:6px;cursor:pointer;font-family:'Barlow Condensed',sans-serif;font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;padding:8px 14px;border:1.5px solid #d8dde6;border-radius:4px;background:#fff;color:#6b7a94;transition:all .15s; }
+    .vq-toggle.active { background:#1e2d4e;border-color:#1e2d4e;color:#fff; }
+    .vq-toggle-knob { width:28px;height:16px;border-radius:8px;background:#d8dde6;position:relative;transition:background .2s;flex-shrink:0; }
+    .vq-toggle-knob::after { content:'';position:absolute;top:2px;left:2px;width:12px;height:12px;border-radius:50%;background:#fff;transition:transform .2s; }
+    .vq-toggle.active .vq-toggle-knob { background:#10b981; }
+    .vq-toggle.active .vq-toggle-knob::after { transform:translateX(12px); }
     /* TOTALS */
     .vq-totals { display: flex; justify-content: flex-end; padding: 0 36px; border-bottom: 1px solid #d8dde6; }
     .vq-tot-inner { min-width: 270px; padding: 14px 0; }
@@ -8243,6 +8261,10 @@ function openVisualQuote(jobId) {
     <button class="vq-btn vq-btn-new" onclick="vqAddRow()">＋ Add Row</button>
     <button class="vq-btn vq-btn-save" onclick="vqSaveToJob('${jobId}')">💾 Save to Job</button>
     <button class="vq-btn vq-btn-print" onclick="window.print()">🖨 Print / PDF</button>
+    <div id="vqGstToggle" class="vq-toggle" onclick="vqToggleGst()">
+      <span class="vq-toggle-knob"></span>
+      <span>GST</span>
+    </div>
     <button class="vq-btn vq-btn-close" onclick="document.getElementById('vq-overlay').remove()">✕ Close</button>
   </div>
 
@@ -8314,9 +8336,9 @@ function openVisualQuote(jobId) {
     <!-- TOTALS -->
     <div class="vq-totals">
       <div class="vq-tot-inner">
-        <div class="vq-t-row">
-          <span>GST (Not registered)</span>
-          <input class="vq-t-val" id="vqGST" value="$0.00" />
+        <div class="vq-t-row" id="vqGstRow" style="display:none">
+          <span>GST (10%)</span>
+          <input class="vq-t-val" id="vqGST" value="$0.00" readonly style="color:#6b7a94" />
         </div>
         <div class="vq-t-row grand">
           <span>Total Due</span>
@@ -8386,12 +8408,24 @@ function openVisualQuote(jobId) {
     items.forEach((item, i) => {
       const tr = document.createElement('tr');
       tr.className = 'vq-irow';
+      const e = s => (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+      const pn = item.partNumber || '';
       tr.innerHTML = `
-        <td><input class="vq-td-num" value="${(item.num || ((i + 1) + '.')).replace(/"/g,'&quot;')}" /></td>
-        <td><textarea class="vq-td-ta" rows="2" oninput="vqAr(this)">${(item.desc || '').replace(/</g,'&lt;')}</textarea></td>
-        <td><input class="vq-td-in" style="text-align:center;width:60px" value="${(item.qty || '').replace(/"/g,'&quot;')}" oninput="vqCalcTotals()" /></td>
-        <td><input class="vq-td-in" style="text-align:right" value="${(item.unit || '').replace(/"/g,'&quot;')}" oninput="vqCalcTotals()" /></td>
-        <td><input class="vq-td-in" style="text-align:right;font-weight:600" value="${(item.amount || '').replace(/"/g,'&quot;')}" /></td>
+        <td><input class="vq-td-num" value="${e(item.num || ((i + 1) + '.'))}" /></td>
+        <td>
+          <div style="position:relative">
+            <div class="vq-part-row">
+              <input class="vq-part-input" placeholder="Search part #..." value="${e(pn)}"
+                autocomplete="off" oninput="vqPartSearch(this)" onfocus="vqPartSearch(this)"
+                onblur="setTimeout(()=>{const d=this.parentElement.querySelector('.vq-part-dd');if(d)d.style.display='none';},200)" />
+              <div class="vq-part-dd"></div>
+            </div>
+            <textarea class="vq-td-ta" rows="2" oninput="vqAr(this)">${e(item.desc)}</textarea>
+          </div>
+        </td>
+        <td><input class="vq-td-in vq-td-qty" style="text-align:center;width:60px" value="${e(item.qty)}" oninput="vqCalcTotals()" /></td>
+        <td><input class="vq-td-in vq-td-unit" style="text-align:right" value="${e(item.unit)}" oninput="vqCalcTotals()" /></td>
+        <td><input class="vq-td-in vq-td-amt" style="text-align:right;font-weight:600" value="${e(item.amount)}" /></td>
       `;
       tbody.appendChild(tr);
       vqAr(tr.querySelector('textarea'));
@@ -8404,28 +8438,40 @@ function openVisualQuote(jobId) {
 
   window.vqGetItems = function() {
     return [...document.querySelectorAll('.vq-irow')].map(tr => {
-      const ins = tr.querySelectorAll('input');
-      return { num: ins[0].value, desc: tr.querySelector('textarea').value, qty: ins[1].value, unit: ins[2].value, amount: ins[3].value };
+      const pi = tr.querySelector('.vq-part-input');
+      return {
+        num: tr.querySelector('.vq-td-num').value,
+        partNumber: pi ? pi.value : '',
+        desc: tr.querySelector('textarea').value,
+        qty: tr.querySelector('.vq-td-qty').value,
+        unit: tr.querySelector('.vq-td-unit').value,
+        amount: tr.querySelector('.vq-td-amt').value
+      };
     });
   };
 
   window.vqCalcTotals = function() {
     const rows = document.querySelectorAll('.vq-irow');
-    let grand = 0;
+    let subtotal = 0;
     rows.forEach(tr => {
-      const ins = tr.querySelectorAll('input');
-      const qty = parseFloat(ins[1]?.value) || 0;
-      const unit = parseFloat(ins[2]?.value) || 0;
+      const qty = parseFloat(tr.querySelector('.vq-td-qty')?.value) || 0;
+      const unit = parseFloat(tr.querySelector('.vq-td-unit')?.value) || 0;
       const amt = qty * unit;
-      if (ins[3]) ins[3].value = amt > 0 ? amt.toFixed(2) : '';
-      grand += amt;
+      const amtInput = tr.querySelector('.vq-td-amt');
+      if (amtInput) amtInput.value = amt > 0 ? amt.toFixed(2) : '';
+      subtotal += amt;
     });
+    const gstOn = document.getElementById('vqGstToggle')?.classList.contains('active');
+    const gstAmt = gstOn ? subtotal * 0.1 : 0;
+    const total = subtotal + gstAmt;
+    const gstEl = document.getElementById('vqGST');
+    if (gstEl) gstEl.value = gstAmt > 0 ? ('$' + gstAmt.toLocaleString('en-AU', {minimumFractionDigits:2,maximumFractionDigits:2})) : '$0.00';
     const totalEl = document.getElementById('vqTotal');
-    if (totalEl) totalEl.value = grand > 0 ? ('$' + grand.toLocaleString('en-AU', {minimumFractionDigits:2,maximumFractionDigits:2})) : '';
+    if (totalEl) totalEl.value = total > 0 ? ('$' + total.toLocaleString('en-AU', {minimumFractionDigits:2,maximumFractionDigits:2})) : '';
   };
 
   window.vqAddRow = function() {
-    const it = vqGetItems(); it.push({ num: (it.length + 1) + '.', desc: '', qty: '', unit: '', amount: '' });
+    const it = vqGetItems(); it.push({ num: (it.length + 1) + '.', desc: '', qty: '', unit: '', amount: '', partNumber: '' });
     vqRenderItems(it);
   };
 
@@ -8433,14 +8479,69 @@ function openVisualQuote(jobId) {
     const it = vqGetItems(); if (it.length > 1) { it.pop(); vqRenderItems(it); }
   };
 
+  // ── PART SEARCH ─────────────────────────────────────────────────────
+  window.vqPartSearch = function(input) {
+    const val = input.value.trim().toLowerCase();
+    const row = input.closest('.vq-irow');
+    const dd = row?.querySelector('.vq-part-dd');
+    if (!dd) return;
+    if (!val) { dd.style.display = 'none'; return; }
+    const matches = PARTS_DB.filter(p =>
+      (p.partNumber||'').toLowerCase().includes(val) ||
+      (p.description||'').toLowerCase().includes(val)
+    ).slice(0, 8);
+    if (matches.length === 0) { dd.style.display = 'none'; return; }
+    const _e = s => (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+    dd.innerHTML = matches.map(p =>
+      `<div class="vq-part-dd-item" onmousedown="vqPartSelect(this,'${p.id}')">
+        <span class="vq-part-dd-num">${_e(p.partNumber)}</span>
+        <span class="vq-part-dd-desc">${_e(p.description)}</span>
+        <span class="vq-part-dd-price">$${partSellPrice(p).toLocaleString('en-AU',{minimumFractionDigits:2})}</span>
+      </div>`
+    ).join('');
+    dd.style.display = 'block';
+  };
+
+  window.vqPartSelect = function(el, partId) {
+    const p = PARTS_DB.find(x => x.id === partId);
+    if (!p) return;
+    const row = el.closest('.vq-irow');
+    if (!row) return;
+    const ta = row.querySelector('textarea');
+    const pi = row.querySelector('.vq-part-input');
+    const qtyIn = row.querySelector('.vq-td-qty');
+    const unitIn = row.querySelector('.vq-td-unit');
+    if (pi) pi.value = p.partNumber;
+    if (ta) {
+      ta.value = p.partNumber + ' — ' + p.description;
+      vqAr(ta);
+    }
+    if (qtyIn) qtyIn.value = '1';
+    if (unitIn) unitIn.value = partSellPrice(p).toFixed(2);
+    const dd = el.closest('.vq-part-dd');
+    if (dd) dd.style.display = 'none';
+    vqCalcTotals();
+  };
+
+  // ── GST TOGGLE ──────────────────────────────────────────────────────
+  window.vqToggleGst = function() {
+    const tog = document.getElementById('vqGstToggle');
+    if (!tog) return;
+    tog.classList.toggle('active');
+    const row = document.getElementById('vqGstRow');
+    if (row) row.style.display = tog.classList.contains('active') ? '' : 'none';
+    vqCalcTotals();
+  };
+
   window.vqCollect = function() {
     const g = id => (document.getElementById(id) || {}).value || '';
+    const gstOn = document.getElementById('vqGstToggle')?.classList.contains('active') || false;
     return {
       quoteRef: g('vqRef'), clientName: g('vqClientName'), clientContact: g('vqClientContact'),
       clientSite: g('vqClientSite'), clientPhone: g('vqClientPhone'), clientEmail: g('vqClientEmail'),
       jobRef: g('vqJobRef'), siteDate: g('vqSiteDate'), quoteDate: g('vqDate'), validDate: g('vqValidDate'),
       scopeText: g('vqScope'), items: vqGetItems(),
-      gstAmt: g('vqGST'), grandTotal: g('vqTotal'),
+      gstEnabled: gstOn, gstAmt: g('vqGST'), grandTotal: g('vqTotal'),
       quoteNotes: g('vqNotes'), payBank: g('vqPayBank'), payPayID: g('vqPayID'), payCard: g('vqPayCard'),
       exclusionsText: g('vqExclusions'), termsText: g('vqTerms'), footerLine: g('vqFooter')
     };
@@ -8469,6 +8570,14 @@ function openVisualQuote(jobId) {
     if (!el) return;
     el.value = v || '';
     if (el.tagName === 'TEXTAREA') vqAr(el);
+  }
+
+  // Restore GST state from saved data
+  if (savedData?.gstEnabled) {
+    const tog = document.getElementById('vqGstToggle');
+    if (tog) { tog.classList.add('active'); }
+    const row = document.getElementById('vqGstRow');
+    if (row) row.style.display = '';
   }
 
   // Set all fields
@@ -14629,7 +14738,7 @@ body{font-family:'Barlow',sans-serif;background:#c8cdd8;color:#1e2d4e;padding:24
   <div style="display:flex;justify-content:flex-end;padding:0 36px;border-bottom:1px solid #d8dde6">
     <div style="min-width:270px;padding:14px 0">
       <div style="display:flex;justify-content:space-between;align-items:center;gap:40px;padding:5px 0;font-size:13px;color:#6b7a94;border-bottom:1px solid #d8dde6">
-        <span>GST (Not registered)</span><span>${e(qd.gstAmt||'$0.00')}</span>
+        <span>${qd.gstEnabled?'GST (10%)':'GST (Not registered)'}</span><span>${e(qd.gstAmt||'$0.00')}</span>
       </div>
       <div style="display:flex;justify-content:space-between;align-items:center;gap:40px;font-family:'Barlow Condensed',sans-serif;font-size:17px;font-weight:800;letter-spacing:.05em;text-transform:uppercase;color:#1e2d4e;border-top:2px solid #1e2d4e;margin-top:6px;padding-top:10px">
         <span>Total Due</span><span style="color:#f5821f">${e(qd.grandTotal||'')}</span>
