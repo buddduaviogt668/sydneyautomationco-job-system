@@ -7553,6 +7553,66 @@ function renderFinancials(){
       </div>
     </div>
 
+    <!-- FORECAST & TRAJECTORY -->
+    <div style="background:#fff;border-radius:12px;border:1px solid #e2e8f0;padding:20px 24px;margin-bottom:20px">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+        <div>
+          <div style="font-size:15px;font-weight:700">Forecast & Trajectory — ${fyLabel}</div>
+          <div style="font-size:12px;color:#64748b;margin-top:2px">Projected annual revenue based on current run rate and pipeline</div>
+        </div>
+        <button onclick="aiAsk('Give me a detailed revenue forecast for the next 6 months based on my data. Pipeline: $${(pipeline||0).toFixed(0)} at ${conversionRate}% win rate. YTD: $${ytdRev.toFixed(0)}. Overheads: $${overheadMonthlyTotal().toFixed(0)}/mo. Outstanding: $${(outstanding||0).toFixed(0)}. Monthly breakdown: ${monthRows.filter(m=>m.rev>0).map(m=>m.label+' $'+m.rev.toFixed(0)).join(', ')}. Target: $${(CFG.incomeComfort||90000).toFixed(0)}/yr. Give me projected monthly revenue for each month ahead, cash position, when I hit targets, and the biggest risks.')" class="ai-section-btn" style="font-size:11px;background:#0369a1">✦ AI Detailed Forecast</button>
+      </div>
+      ${(()=>{
+        const paidMonths = monthRows.filter(m=>m.rev>0);
+        const last3 = paidMonths.slice(-3);
+        const avgMonthlyRev = last3.length>0 ? last3.reduce((s,m)=>s+m.rev,0)/last3.length : 0;
+        const monthsElapsed = thisMonth >= 6 ? thisMonth - 6 : thisMonth + 6;
+        const monthsLeft = 12 - monthsElapsed;
+        const projectedAnnual = ytdRev + (avgMonthlyRev * monthsLeft);
+        const conservativeAnnual = ytdRev + (avgMonthlyRev * 0.7 * monthsLeft);
+        const pipelineExpected = pipeline * (conversionRate/100);
+        const minTarget = Number(CFG.incomeMin)||60000;
+        const comfTarget = Number(CFG.incomeComfort)||90000;
+        const stretchTarget = Number(CFG.incomeStretch)||120000;
+        const hitMin = projectedAnnual >= minTarget;
+        const hitComf = projectedAnnual >= comfTarget;
+        const remainingNeeded = Math.max(0, comfTarget - ytdRev);
+        const neededMonthly = monthsLeft > 0 ? remainingNeeded / monthsLeft : 0;
+        const vsCurrent = avgMonthlyRev > 0 ? Math.round((neededMonthly/avgMonthlyRev)*100) : 0;
+        const s = (label,val,note,color) => `<div style="text-align:center;padding:14px 10px;background:#f8fafc;border-radius:10px">
+          <div style="font-size:20px;font-weight:800;color:${color}">${val}</div>
+          <div style="font-size:11px;color:#64748b;margin-top:2px">${label}</div>
+          ${note?`<div style="font-size:10px;color:#94a3b8;margin-top:1px">${note}</div>`:''}
+        </div>`;
+        const projectsAtRisk = jobs.filter(j=>['quoted','booking'].includes(j.status) && daysSince(j.createdAt)>30);
+        return `
+        <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:10px;margin-bottom:16px">
+          ${s('Monthly Run Rate',fmt$(avgMonthlyRev),'avg last 3 months', avgMonthlyRev>=comfTarget/12?'#10b981':avgMonthlyRev>=minTarget/12?'#f59e0b':'#ef4444')}
+          ${s('Projected FY Total',fmt$(projectedAnnual),`${monthsLeft}mo at current rate`, hitComf?'#10b981':hitMin?'#f59e0b':'#ef4444')}
+          ${s('Conservative Est.',fmt$(conservativeAnnual),'70% confidence', '#6366f1')}
+          ${s('Pipeline Expected',fmt$(pipelineExpected),`${conversionRate}% win rate`, '#3b82f6')}
+          ${s('Needed /mo',fmt$(neededMonthly),`${monthsLeft}mo to hit ${fmt$(comfTarget)}`, avgMonthlyRev>=neededMonthly?'#10b981':'#ef4444')}
+        </div>
+        <div style="background:#f1f5f9;border-radius:10px;padding:16px 20px">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;flex-wrap:wrap;gap:8px">
+            <div style="font-size:13px;font-weight:700;color:#0f172a">${monthsLeft} months left in ${fyLabel}</div>
+            <div style="font-size:12px;color:#64748b">YTD: ${fmt$(ytdRev)} · Run rate: ${fmt$(avgMonthlyRev)}/mo · Target: ${fmt$(comfTarget)}/yr</div>
+          </div>
+          ${hitComf
+            ?`<div style="padding:10px 14px;background:#f0fdf4;border-left:4px solid #10b981;border-radius:6px;font-size:13px;color:#065f46;font-weight:600">✓ On track for Comfortable target (${fmt$(comfTarget)}) at current run rate of ${fmt$(avgMonthlyRev)}/mo</div>`
+            :hitMin
+              ?`<div style="padding:10px 14px;background:#fffbeb;border-left:4px solid #f59e0b;border-radius:6px;font-size:13px;color:#92400e;font-weight:600">⚠ On track for Minimum (${fmt$(minTarget)}) but need ${fmt$(neededMonthly)}/mo (${vsCurrent}% of current run rate) to reach Comfortable</div>`
+              :`<div style="padding:10px 14px;background:#fef2f2;border-left:4px solid #ef4444;border-radius:6px;font-size:13px;color:#991b1b;font-weight:600">⚠ Below Minimum (${fmt$(minTarget)}). Need ${fmt$(neededMonthly)}/mo (${vsCurrent}% of current rate) to get back on track</div>`}
+          ${!hitComf
+            ?`<div style="margin-top:12px;padding:10px 14px;background:#fff;border-radius:8px;font-size:12px;color:#64748b">
+              <span style="font-weight:600;color:#475569">Pipeline can bridge the gap:</span> Converting ${fmt$(pipelineExpected)} of pipeline at current win rate → projected total of <strong>${fmt$(projectedAnnual+pipelineExpected)}</strong>
+              ${projectsAtRisk.length>0?` · <span style="color:#ef4444">⚠ ${projectsAtRisk.length} quote${projectsAtRisk.length>1?'s':''} over 30d old — follow up or mark lost</span>`:''}
+            </div>`
+            :''}
+        </div>`;
+      })()}
+    </div>
+
     <!-- CHARTS ROW -->
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:20px">
 
