@@ -9563,10 +9563,11 @@ function renderIncomeTracker(){
   const dayOfMonth = now.getDate();
   const pctThrough = Math.round((dayOfMonth/daysInMonth)*100);
 
-  // Revenue invoiced this month (SAI invoiced/paid)
+  // Revenue invoiced this month — uses invoiceAmount (not jobRevenue, which only counts paid)
+  // SAI jobs with an invoiceDate in this month → sum their invoiceAmount (or quoteAmount if no invoice yet)
   const mthInvoiced = jobs
     .filter(j=>j.type==='SAI' && (j.invoiceDate||j.createdAt||'')>=mStart && (j.invoiceDate||j.createdAt||'')<=mEnd)
-    .reduce((s,j)=>s+jobRevenue(j), 0);
+    .reduce((s,j)=>s + (Number(j.invoiceAmount)||Number(j.amountDue)||Number(j.quoteAmount)||0), 0);
 
   const targets = [
     {label:'Minimum', val:(Number(CFG.incomeMin)||0)/12, color:'#ef4444'},
@@ -12776,22 +12777,51 @@ function renderProfitability(){
     <div style="display:grid;grid-template-columns:1fr 320px;gap:20px;align-items:start">
       <!-- Job table -->
       <div>
-        <div style="font-size:13px;font-weight:700;color:#0f172a;margin-bottom:10px">By Job — Highest Margin First</div>
+        <div style="font-size:13px;font-weight:700;color:#0f172a;margin-bottom:10px">By Job — Highest Margin First
+          <span id="profit-group-toggle" onclick="toggleProfitGroup()" style="margin-left:10px;font-size:11px;font-weight:600;color:#6366f1;cursor:pointer;background:#eef2ff;padding:3px 10px;border-radius:12px;user-select:none">${window._profitGroupByClient?'🔀 Ungroup':'🔀 Group by client'}</span>
+        </div>
         <div style="background:#fff;border:1px solid #e2e8f0;border-radius:12px;overflow:hidden">
           <div style="display:grid;grid-template-columns:80px 1fr 90px 80px 80px 70px;padding:10px 14px;background:#0f172a;font-size:10px;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:0.5px">
             <div>Job</div><div>Client</div><div style="text-align:right">Revenue</div><div style="text-align:right">Cost</div><div style="text-align:right">Profit</div><div style="text-align:center">Margin %</div>
           </div>
-          ${jobData.length===0?`<div style="padding:32px;text-align:center;color:#94a3b8">No paid jobs yet</div>`:''}
-          ${jobData.map((d,i)=>`<div style="display:grid;grid-template-columns:80px 1fr 90px 80px 80px 70px;padding:10px 14px;border-bottom:1px solid #f1f5f9;align-items:center;cursor:pointer" onclick="openJobDetail('${d.j.id}')" onmouseover="this.style.background='#f8fafc'" onmouseout="this.style.background='transparent'">
-            <div style="font-size:11px;font-family:monospace;color:#1e3a5f;font-weight:600">${d.j.jobNumber}</div>
-            <div style="font-size:13px;font-weight:600;color:#0f172a;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(d.c.company||'—')}</div>
-            <div style="text-align:right;font-size:13px;font-weight:600;color:#0f172a">${fmt$(d.revenue)}</div>
-            <div style="text-align:right;font-size:12px;color:${d.cost>0?'#ef4444':'#94a3b8'}" title="${(()=>{const c=getJobCost(d.j);const parts=[];if(c.partsCost>0)parts.push('📦 Parts: '+fmt$(c.partsCost));if(c.subLabour>0)parts.push('🔧 Sub: '+fmt$(c.subLabour));if(c.expCost>0)parts.push('🧾 Expenses: '+fmt$(c.expCost));if(c.myLabourCost>0)parts.push('⏱ My time ('+c.hoursLogged+'h): '+fmt$(c.myLabourCost));const sinvs=(window._supInvoices||[]).filter(inv=>inv.jobId===d.j.id||inv.jobRef===d.j.jobNumber);if(sinvs.length>0)parts.push('Sources: '+sinvs.map(i=>(i.supplier||i.supplierName||'?').split(' ')[0]+' '+fmt$(i.amount)).join(', '));return parts.join(' · ')||'No costs logged — hover to see breakdown';})()}">${d.cost>0?fmt$(d.cost):'—'}</div>
-            <div style="text-align:right;font-size:13px;font-weight:700;color:${d.profit>0?'#10b981':'#ef4444'}">${fmt$(d.profit)}</div>
-            <div style="text-align:center">
-              <span style="background:${marginColor(d.margin)}20;color:${marginColor(d.margin)};border-radius:20px;padding:2px 8px;font-size:11px;font-weight:700">${d.margin}%</span>
-            </div>
-          </div>`).join('')}
+          ${(()=>{
+            const _profitGroup = window._profitGroupByClient;
+            const rows = _profitGroup ? (()=>{
+              const groups = {};
+              jobData.forEach(d=>{
+                const key = d.c.company||d.j.clientId||'?';
+                if(!groups[key]) groups[key]={company:key,jobs:[],revenue:0,cost:0,profit:0};
+                groups[key].jobs.push(d.j);
+                groups[key].revenue += d.revenue;
+                groups[key].cost += d.cost;
+                groups[key].profit += d.profit;
+              });
+              return Object.values(groups).sort((a,b)=>b.profit-a.profit).map(g=>{
+                const m = g.revenue>0?Math.round((g.profit/g.revenue)*100):0;
+                const jn = g.jobs.map(j=>j.jobNumber).join(', ');
+                return `<div style="display:grid;grid-template-columns:80px 1fr 90px 80px 80px 70px;padding:10px 14px;border-bottom:1px solid #f1f5f9;align-items:center;background:#fafbff" title="${esc(jn)}">
+                  <div style="font-size:10px;font-family:monospace;color:#6366f1;font-weight:600">${g.jobs.length} jobs</div>
+                  <div style="font-size:13px;font-weight:600;color:#0f172a">${esc(g.company)}</div>
+                  <div style="text-align:right;font-size:13px;font-weight:600;color:#0f172a">${fmt$(g.revenue)}</div>
+                  <div style="text-align:right;font-size:12px;color:${g.cost>0?'#ef4444':'#94a3b8'}">${g.cost>0?fmt$(g.cost):'—'}</div>
+                  <div style="text-align:right;font-size:13px;font-weight:700;color:${g.profit>0?'#10b981':'#ef4444'}">${fmt$(g.profit)}</div>
+                  <div style="text-align:center">
+                    <span style="background:${marginColor(m)}20;color:${marginColor(m)};border-radius:20px;padding:2px 8px;font-size:11px;font-weight:700">${m}%</span>
+                  </div>
+                </div>`;
+              });
+            })() : jobData.map((d,i)=>`<div style="display:grid;grid-template-columns:80px 1fr 90px 80px 80px 70px;padding:10px 14px;border-bottom:1px solid #f1f5f9;align-items:center;cursor:pointer" onclick="openJobDetail('${d.j.id}')" onmouseover="this.style.background='#f8fafc'" onmouseout="this.style.background='transparent'">
+              <div style="font-size:11px;font-family:monospace;color:#1e3a5f;font-weight:600">${d.j.jobNumber}</div>
+              <div style="font-size:13px;font-weight:600;color:#0f172a;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(d.c.company||'—')}</div>
+              <div style="text-align:right;font-size:13px;font-weight:600;color:#0f172a">${fmt$(d.revenue)}</div>
+              <div style="text-align:right;font-size:12px;color:${d.cost>0?'#ef4444':'#94a3b8'}" title="${(()=>{const c=getJobCost(d.j);const parts=[];if(c.partsCost>0)parts.push('📦 Parts: '+fmt$(c.partsCost));if(c.subLabour>0)parts.push('🔧 Sub: '+fmt$(c.subLabour));if(c.expCost>0)parts.push('🧾 Expenses: '+fmt$(c.expCost));if(c.myLabourCost>0)parts.push('⏱ My time ('+c.hoursLogged+'h): '+fmt$(c.myLabourCost));const sinvs=(window._supInvoices||[]).filter(inv=>inv.jobId===d.j.id||inv.jobRef===d.j.jobNumber);if(sinvs.length>0)parts.push('Sources: '+sinvs.map(i=>(i.supplier||i.supplierName||'?').split(' ')[0]+' '+fmt$(i.amount)).join(', '));return parts.join(' · ')||'No costs logged — hover to see breakdown';})()}">${d.cost>0?fmt$(d.cost):'—'}</div>
+              <div style="text-align:right;font-size:13px;font-weight:700;color:${d.profit>0?'#10b981':'#ef4444'}">${fmt$(d.profit)}</div>
+              <div style="text-align:center">
+                <span style="background:${marginColor(d.margin)}20;color:${marginColor(d.margin)};border-radius:20px;padding:2px 8px;font-size:11px;font-weight:700">${d.margin}%</span>
+              </div>
+            </div>`);
+            return rows.join('');
+          })()}
           ${jobData.length>0?`<div style="display:grid;grid-template-columns:80px 1fr 90px 80px 80px 70px;padding:11px 14px;background:#f8fafc;border-top:2px solid #e2e8f0;font-weight:700">
             <div colspan="2" style="font-size:12px;color:#0f172a;grid-column:1/3">TOTAL (${jobData.length} jobs)</div>
             <div style="text-align:right;font-size:13px;color:#10b981">${fmt$(totalRevenue)}</div>
@@ -12837,6 +12867,11 @@ function renderProfitability(){
       </div>
     </div>
   </div>`;
+}
+
+function toggleProfitGroup(){
+  window._profitGroupByClient = !window._profitGroupByClient;
+  renderMain();
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
