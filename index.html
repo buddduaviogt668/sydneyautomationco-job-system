@@ -7389,9 +7389,12 @@ function renderFinancials(){
   });
   const topSuppliers=Object.values(supSpendMap).sort((a,b)=>b.spent-a.spent).slice(0,5);
 
-  // GST threshold
-  const gstPct=Math.min(100,Math.round((ytdRev/75000)*100));
-  const gstColor=ytdRev>70000?'#b91c1c':(gstPct>90?'#ef4444':gstPct>70?'#f59e0b':'#10b981');
+  // GST threshold — rolling 12 months (ATO looks at annual turnover, not FYTD)
+  const twelveMoAgo = new Date(); twelveMoAgo.setFullYear(twelveMoAgo.getFullYear()-1);
+  const twelveMoStart = twelveMoAgo.toISOString().split('T')[0];
+  const gstRev = paidJobs.filter(j=>j.paidDate&&j.paidDate>=twelveMoStart).reduce((s,j)=>s+jobRevenue(j),0);
+  const gstPct=Math.min(100,Math.round((gstRev/75000)*100));
+  const gstColor=gstRev>70000?'#b91c1c':(gstPct>90?'#ef4444':gstPct>70?'#f59e0b':'#10b981');
 
   // Monthly breakdown (last 6 months)
   const MONTHS=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
@@ -7518,13 +7521,13 @@ function renderFinancials(){
         </div>
         <div style="text-align:right">
           <div style="font-size:22px;font-weight:800;color:${gstColor}">${gstPct}%</div>
-          <div style="font-size:12px;color:#64748b">${fmt$(ytdRev)} of $75,000</div>
+          <div style="font-size:12px;color:#64748b">${fmt$(gstRev)} of $75,000 · last 12 months</div>
         </div>
       </div>
       <div style="background:#f1f5f9;border-radius:6px;height:10px;overflow:hidden">
         <div style="height:10px;background:${gstColor};border-radius:6px;width:${gstPct}%;transition:width 0.3s"></div>
       </div>
-      ${ytdRev>70000?`<div style="margin-top:8px;padding:12px 16px;background:#fef2f2;border:1px solid #fca5a5;border-radius:6px;font-size:13px;color:#b91c1c;font-weight:800">⚠️ APPROACHING GST THRESHOLD ($75k). Speak to your accountant about registering for GST.</div>`:
+      ${gstRev>70000?`<div style="margin-top:8px;padding:12px 16px;background:#fef2f2;border:1px solid #fca5a5;border-radius:6px;font-size:13px;color:#b91c1c;font-weight:800">⚠️ APPROACHING GST THRESHOLD ($75k). Speak to your accountant about registering for GST.</div>`:
       (gstPct>80?`<div style="margin-top:8px;padding:8px 12px;background:#fff5f5;border-radius:6px;font-size:12px;color:#ef4444;font-weight:600">⚠ Getting close — consider registering for GST before you hit $75k to avoid a penalty.</div>`:'')}
     </div>
 
@@ -16890,7 +16893,8 @@ const AI_ACTIONS = {
       const totalOutstanding = jobs.filter(j=>['invoiced','overdue'].includes(j.status)).reduce((s,j)=>s+jobOutstanding(j),0);
       const pipelineJobs = jobs.filter(j=>['quoted','lead','booking','approved','deposit_due','deposit_paid','parts_ordered','scheduled','work_order','po_received'].includes(j.status));
       const pipelineValue = pipelineJobs.reduce((s,j)=>s+Math.max(Number(j.quoteAmount)||0,Number(j.invoiceAmount)||0),0);
-      const ytdRev = paidJobs.filter(j=>j.paidDate&&j.paidDate>=(new Date().getFullYear()-1)+'-07-01').reduce((s,j)=>s+jobRevenue(j),0);
+      const twelveMoAgo = new Date(); twelveMoAgo.setFullYear(twelveMoAgo.getFullYear()-1);
+      const ytdRev = paidJobs.filter(j=>j.paidDate&&j.paidDate>=twelveMoAgo.toISOString().split('T')[0]).reduce((s,j)=>s+jobRevenue(j),0);
       return { activeJobs:activeJobs.length, pipelineJobs:pipelineJobs.length, pipelineValue:'$'+pipelineValue.toFixed(2), overdueInvoices:overdue.length, totalOutstanding:'$'+totalOutstanding.toFixed(2), ytdRevenue:'$'+ytdRev.toFixed(2), totalClients:clients.length, totalJobs:jobs.length };
     }
   },
@@ -17034,11 +17038,10 @@ function buildAIContext(){
   const pipelineValue = pipelineJobs.reduce((s,j)=>s+(Number(j.quoteAmount||j.invoiceAmount)||0),0);
   const thisMonthStr = today().substring(0,7);
   const paidThisMonth = jobs.filter(j=>j.status==='paid'&&(j.paidDate||'').startsWith(thisMonthStr)).reduce((s,j)=>s+jobRevenue(j),0);
-  // Use Australian FY (Jul–Jun) for YTD figures
-  const _aiNow = new Date(); const _aiMth = _aiNow.getMonth();
-  const _aiFYStart = `${_aiMth>=6?_aiNow.getFullYear():_aiNow.getFullYear()-1}-07-01`;
-  const _aiFYEnd   = `${_aiMth>=6?_aiNow.getFullYear()+1:_aiNow.getFullYear()}-06-30`;
-  const _inAIFY = d => d && d >= _aiFYStart && d <= _aiFYEnd;
+  // Rolling 12 months for GST threshold tracking (not FYTD — resets every July)
+  const _ai12mo = new Date(); _ai12mo.setFullYear(_ai12mo.getFullYear()-1);
+  const _ai12Start = _ai12mo.toISOString().split('T')[0];
+  const _inAIFY = d => d && d >= _ai12Start;
   const paidYTD = jobs.filter(j=>j.status==='paid'&&_inAIFY(j.paidDate)).reduce((s,j)=>s+jobRevenue(j),0);
   const noPO = jobs.filter(j=>j.status==='quoted' && j.quoteAmount && !j.poNumber && daysSince(j.createdAt)>7);
 
@@ -17134,8 +17137,8 @@ Estimated super owed this quarter: $${estimatedSuperOwed.toFixed(0)}
 Super is due 28 days after each quarter end: 28 Oct, 28 Jan, 28 Apr, 28 Jul
 PENALTY: 10% super guarantee charge if late — this is NON-NEGOTIABLE, flag immediately if overdue
 
-══ TAX & BAS ══
-GST threshold: $75,000/yr | YTD revenue: $${paidYTD.toFixed(0)} (${Math.round(paidYTD/75000*100)}% of threshold)
+  ══ TAX & BAS (rolling 12 months) ══
+  GST threshold: $75,000/yr | Rolling 12mo revenue: $${paidYTD.toFixed(0)} (${Math.round(paidYTD/75000*100)}% of threshold)
 GST registered: ${gstRegistered ? 'YES' : 'NO — register before $75k'}
 Next BAS: ${nextBAS ? nextBAS.q+' due '+nextBAS.due+' ('+daysToBAS+' days)' : 'check ATO portal'}
 Tax file threshold: $18,200 | HECS: ${CFG.hasHECS?'YES':'NO'} | TFT claimed: ${CFG.claimTFT?'YES':'NO'}
