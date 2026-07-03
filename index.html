@@ -7392,7 +7392,7 @@ function renderFinancials(){
   // GST threshold — rolling 12 months (ATO looks at annual turnover, not FYTD)
   const twelveMoAgo = new Date(); twelveMoAgo.setFullYear(twelveMoAgo.getFullYear()-1);
   const twelveMoStart = twelveMoAgo.toISOString().split('T')[0];
-  const gstRev = paidJobs.filter(j=>j.paidDate&&j.paidDate>=twelveMoStart).reduce((s,j)=>s+jobRevenue(j),0);
+  const gstRev = paidJobs.filter(j=>j.paidDate&&j.paidDate>=twelveMoStart).reduce((s,j)=>s+(Number(j.quoteAmount)||0),0);
   const gstPct=Math.min(100,Math.round((gstRev/75000)*100));
   const gstColor=gstRev>70000?'#b91c1c':(gstPct>90?'#ef4444':gstPct>70?'#f59e0b':'#10b981');
 
@@ -17102,7 +17102,7 @@ function buildAIContext(){
   const _ai12mo = new Date(); _ai12mo.setFullYear(_ai12mo.getFullYear()-1);
   const _ai12Start = _ai12mo.toISOString().split('T')[0];
   const _inAIFY = d => d && d >= _ai12Start;
-  const paidYTD = jobs.filter(j=>j.status==='paid'&&_inAIFY(j.paidDate)).reduce((s,j)=>s+jobRevenue(j),0);
+  const paidYTD = jobs.filter(j=>j.status==='paid'&&_inAIFY(j.paidDate)).reduce((s,j)=>s+(Number(j.quoteAmount)||0),0);
   const noPO = jobs.filter(j=>j.status==='quoted' && j.quoteAmount && !j.poNumber && daysSince(j.createdAt)>7);
 
   // ── PAYROLL METRICS ──
