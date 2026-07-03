@@ -3256,7 +3256,7 @@ function renderJobs(){
 
   const pipelineJobs = jobs.filter(j=>!['paid','lost','lead'].includes(j.status));
   const pipelineVal  = pipelineJobs.reduce((s,j)=>s+(Number(j.quoteAmount)||0),0);
-  const invVal       = jobs.filter(j=>['invoiced','overdue'].includes(j.status)).reduce((s,j)=>s+jobRevenue(j),0);
+  const invVal       = jobs.filter(j=>['invoiced','overdue'].includes(j.status)).reduce((s,j)=>s+jobOutstanding(j),0);
   const paidVal      = jobs.filter(j=>j.status==='paid').reduce((s,j)=>s+jobRevenue(j),0);
   const ovCnt        = cnt.overdue||0;
 
