@@ -8248,13 +8248,20 @@ function openVisualQuote(jobId) {
       outline: none; padding: 0 0 1px; width: 100%; max-width: 520px; }
     /* PRINT */
     @media print {
-      #vq-toolbar { display: none !important; }
-      #vq-overlay { position: fixed !important; inset: 0 !important; background: #fff !important; padding: 24px !important; z-index: 999999 !important; overflow: visible !important; }
+      @page { margin: 0; size: auto; }
+      #vq-toolbar, .vq-add-row, .vq-btn-sm, .vq-part-row, .vq-toggle { display: none !important; }
+      #vq-overlay {
+        position: fixed !important; top: 0 !important; left: 0 !important;
+        width: 100% !important; height: 100% !important; background: #fff !important;
+        padding: 0 !important; margin: 0 !important; z-index: 999999 !important;
+        overflow: auto !important;
+      }
       body > *:not(#vq-overlay) { display: none !important; }
-      .vq-add-row { display: none !important; }
-      .vq-btn-sm { display: none !important; }
-      .vq-part-row { display: none !important; }
+      .vq-header-brand { padding: 34px 40px 28px !important; }
+      .vq-brand-name { font-size: 34px !important; }
+      .vq-header-contact { padding: 34px 40px 28px !important; min-width: 300px !important; }
       .vq-td-ta { border: none !important; }
+      .vq-footer { display: none !important; }
       * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; color-adjust: exact !important; }
     }
   </style>
