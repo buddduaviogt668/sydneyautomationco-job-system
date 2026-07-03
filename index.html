@@ -3502,7 +3502,7 @@ function renderClients(){
           const cj    = jobs.filter(j=>j.clientId===c.id);
           const paid  = cTotalPaid(c.id);
           const active= cj.filter(j=>!['paid','lost'].includes(j.status)).length;
-          const owed  = cj.filter(j=>['invoiced','overdue'].includes(j.status)).reduce((s,j)=>s+jobRevenue(j),0);
+          const owed  = cj.filter(j=>['invoiced','overdue'].includes(j.status)).reduce((s,j)=>s+jobOutstanding(j),0);
           const lastJ = cLastJob(c.id);
           const avBg  = cAvatarColor(c.company);
           const sys   = c.systemType&&SYS_C[c.systemType];
@@ -5609,7 +5609,7 @@ function renderClientDetail(id){
   const c=clients.find(x=>x.id===id); if(!c) return;
   const cj    = jobs.filter(j=>j.clientId===c.id).sort((a,b)=>new Date(b.createdAt)-new Date(a.createdAt));
   const paid  = cTotalPaid(c.id);
-  const owed  = cj.filter(j=>['invoiced','overdue'].includes(j.status)).reduce((s,j)=>s+jobRevenue(j),0);
+  const owed  = cj.filter(j=>['invoiced','overdue'].includes(j.status)).reduce((s,j)=>s+jobOutstanding(j),0);
   const active= cj.filter(j=>!['paid','lost'].includes(j.status)).length;
   const qJobs = cj.filter(j=>j.type==='SAQ');
   const wonQ  = qJobs.filter(j=>['approved','work_order','scheduled','invoiced','paid'].includes(j.status)).length;
