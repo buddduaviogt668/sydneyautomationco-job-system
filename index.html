@@ -1267,6 +1267,16 @@ let taxManual= STORE.get('taxman')  || {cashIncome:0,toolsOver300:0,phonePct:80,
 let jobs     = STORE.get('jobs')    || [];
 let counters = STORE.get('counters')|| {SAI:100045,SAQ:10144,SAO:1001,PRJ:1};
 
+// ─── MIGRATION: Fix old "not registered for GST" text in stored jobs ──────────
+jobs.forEach(j => {
+  if (j.invoiceHeaderFields && j.invoiceHeaderFields.terms && j.invoiceHeaderFields.terms.includes('not registered for GST')) {
+    j.invoiceHeaderFields.terms = j.invoiceHeaderFields.terms.replace(/This business is not registered for GST\.\s*No GST is charged\./g, 'This business is registered for GST. This is a tax invoice for GST purposes.');
+  }
+});
+if (jobs.some(j => j.invoiceHeaderFields?.terms?.includes('registered for GST. This is a tax invoice'))) {
+  localStorage.setItem('sac:jobs', JSON.stringify(jobs));
+}
+
 // ─── FILE SYSTEM ACCESS API ───────────────────────────────────────────────────
 // Writes to a real .json file on disk on every save. Far more reliable than
 // localStorage. File handle is stored in IndexedDB so permission persists.
