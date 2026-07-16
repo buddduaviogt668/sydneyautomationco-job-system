@@ -2261,19 +2261,23 @@ let _storedCFG = STORE.get('cfg') || {};
 if (_storedCFG.gst === 0 && _storedCFG.gstRegistered === undefined) {
   _storedCFG.gst = 0.1;
   _storedCFG.gstRegistered = true;
-  // Also update conditions if they still contain the old "not registered" text
-  if (_storedCFG.quoteConditions && _storedCFG.quoteConditions.some(c => c.includes('not registered for GST'))) {
-    _storedCFG.quoteConditions = _storedCFG.quoteConditions.map(c =>
-      c.includes('not registered for GST') ? 'This business is registered for GST. GST is included in all amounts shown.' : c
-    );
-  }
-  if (_storedCFG.invoiceConditions && _storedCFG.invoiceConditions.some(c => c.includes('not registered for GST'))) {
-    _storedCFG.invoiceConditions = _storedCFG.invoiceConditions.map(c =>
-      c.includes('not registered for GST') ? 'This business is registered for GST. This is a tax invoice for GST purposes.' : c
-    );
-  }
   STORE.set('cfg', _storedCFG);
 }
+// Always migrate old condition text regardless of GST flag state
+let _cfgDirty = false;
+if (_storedCFG.quoteConditions && _storedCFG.quoteConditions.some(c => c.includes('not registered for GST'))) {
+  _storedCFG.quoteConditions = _storedCFG.quoteConditions.map(c =>
+    c.includes('not registered for GST') ? 'This business is registered for GST. GST is included in all amounts shown.' : c
+  );
+  _cfgDirty = true;
+}
+if (_storedCFG.invoiceConditions && _storedCFG.invoiceConditions.some(c => c.includes('not registered for GST'))) {
+  _storedCFG.invoiceConditions = _storedCFG.invoiceConditions.map(c =>
+    c.includes('not registered for GST') ? 'This business is registered for GST. This is a tax invoice for GST purposes.' : c
+  );
+  _cfgDirty = true;
+}
+if (_cfgDirty) STORE.set('cfg', _storedCFG);
 let CFG = Object.assign({}, CFG_DEFAULTS, _storedCFG,
   {overheads: _storedCFG.overheads || CFG_DEFAULTS.overheads,
    startupItems: _storedCFG.startupItems || CFG_DEFAULTS.startupItems,
