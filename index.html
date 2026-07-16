@@ -1268,14 +1268,14 @@ let jobs     = STORE.get('jobs')    || [];
 let counters = STORE.get('counters')|| {SAI:100045,SAQ:10144,SAO:1001,PRJ:1};
 
 // ─── MIGRATION: Fix old "not registered for GST" text in stored jobs ──────────
+let _jobsDirty = false;
 jobs.forEach(j => {
   if (j.invoiceHeaderFields && j.invoiceHeaderFields.terms && j.invoiceHeaderFields.terms.includes('not registered for GST')) {
-    j.invoiceHeaderFields.terms = j.invoiceHeaderFields.terms.replace(/This business is not registered for GST\.\s*No GST is charged\./g, 'This business is registered for GST. This is a tax invoice for GST purposes.');
+    j.invoiceHeaderFields.terms = j.invoiceHeaderFields.terms.replace(/This business is not registered for GST\.?\s*(No GST is charged\.?)?/gi, 'This business is registered for GST. This is a tax invoice for GST purposes.');
+    _jobsDirty = true;
   }
 });
-if (jobs.some(j => j.invoiceHeaderFields?.terms?.includes('registered for GST. This is a tax invoice'))) {
-  localStorage.setItem('sac:jobs', JSON.stringify(jobs));
-}
+if (_jobsDirty) localStorage.setItem('sac:jobs', JSON.stringify(jobs));
 
 // ─── FILE SYSTEM ACCESS API ───────────────────────────────────────────────────
 // Writes to a real .json file on disk on every save. Far more reliable than
@@ -15048,7 +15048,7 @@ function printInvoiceDoc(jobId){
   d.write('</div>');
   d.write('<div class="page">');
   var initDue=(function(){if(cfgTermDays===0)return'Due: On Invoice';var dt=new Date(issued+'T00:00:00');dt.setDate(dt.getDate()+cfgTermDays);return'Due: '+dt.toLocaleDateString('en-AU',{day:'2-digit',month:'short',year:'numeric'});})();
-  d.write(docHeader('INVOICE',invNum,'Date: '+fmtD(issued),'<span id="dl">'+initDue+'</span>'));
+  d.write(docHeader(CFG.gstRegistered!==false?'TAX INVOICE':'INVOICE',invNum,'Date: '+fmtD(issued),'<span id="dl">'+initDue+'</span>'));
   d.write('<div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-bottom:24px">');
   d.write('<div style="border:1.5px solid #dde3ec;border-radius:10px;overflow:hidden">');
   d.write('<div style="background:#0e1f3d;padding:8px 14px;font-size:10px;font-weight:800;color:#fff;text-transform:uppercase;letter-spacing:1px">Bill To</div>');
@@ -18415,7 +18415,7 @@ function generateInvoicePDF(jobId){
       </div>
     </div>
     <div style="text-align:right">
-      <div style="font-family:Barlow Condensed,sans-serif;font-size:42px;font-weight:900;color:#f07020;letter-spacing:4px;line-height:1">INVOICE</div>
+      <div style="font-family:Barlow Condensed,sans-serif;font-size:42px;font-weight:900;color:#f07020;letter-spacing:4px;line-height:1">${CFG.gstRegistered !== false ? 'TAX INVOICE' : 'INVOICE'}</div>
       <div style="font-family:Barlow Condensed,sans-serif;font-size:18px;font-weight:700;color:#fff;margin-top:4px;letter-spacing:2px">${esc(invNum)}</div>
     </div>
   </div>
