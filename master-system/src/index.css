@@ -1,0 +1,38 @@
+@import "tailwindcss";
+
+@theme {
+  --color-sac-dark: #0f172a;
+  --color-sac-accent: #6366f1;
+  --color-sac-surface: #ffffff;
+  --color-sac-bg: #f8fafc;
+  --font-sans: 'DM Sans', sans-serif;
+  --font-mono: 'DM Mono', monospace;
+}
+
+@import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700;800&family=DM+Mono:wght@400;500&display=swap');
+
+body {
+  font-family: 'DM Sans', sans-serif;
+  background-color: var(--color-sac-bg);
+  color: var(--color-sac-dark);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Custom animations and overrides */
+.glass-panel {
+  background: rgba(255, 255, 255, 0.7);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid rgba(255, 255, 255, 0.5);
+  box-shadow: 0 10px 40px -10px rgba(0, 0, 0, 0.05);
+}
+
+.premium-shadow {
+  box-shadow: 0 20px 40px -10px rgba(15, 23, 42, 0.05), 0 0 20px rgba(99, 102, 241, 0.03);
+}
+
+/* Scrollbar */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
