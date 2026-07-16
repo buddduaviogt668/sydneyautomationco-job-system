@@ -15017,9 +15017,8 @@ function printQuoteDoc(jobId){
   d.close();
 }
 function printInvoiceDoc(jobId){
-  var j=jobs.find(function(x){return x.id===jobId;});
-  if(!j){alert('Job not found');return;}
-  var c=gc(j.clientId)||{};
+  generateInvoicePDF(jobId);
+  return;
   var invNum=j.invoiceNumber||j.jobNumber;
   var invAmt=Number(j.invoiceAmount)||Number(j.quoteAmount)||0;
   var issued=(j.invoiceHeaderFields&&j.invoiceHeaderFields.issueDate)||j.invoiceDate||today();
