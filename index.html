@@ -18520,15 +18520,25 @@ function generateInvoicePDF(jobId){
           <div style="font-size:15px;font-weight:800;color:#0e1f3d">${esc(payId)}</div>
           <div style="font-size:10px;color:#64748b;margin-top:6px">Instant payment via any bank app</div>
         </div>`:''}
-        <div style="background:#fff;border:1.5px solid #dde3ec;border-radius:10px;padding:14px;border-left:4px solid #635bff">
-          <div style="font-family:Barlow Condensed,sans-serif;font-size:10px;font-weight:800;color:#635bff;text-transform:uppercase;letter-spacing:1px;margin-bottom:8px">💳 Card Payment</div>
+        <div style="background:#fff;border:2px solid #635bff;border-left:5px solid #635bff;border-radius:10px;padding:18px;border-left:4px solid #635bff">
+          <div style="font-family:Barlow Condensed,sans-serif;font-size:13px;font-weight:800;color:#635bff;text-transform:uppercase;letter-spacing:1px;margin-bottom:8px">💳 Card Payment</div>
           ${(()=>{
             const sUrl = stripePayUrl(jobId);
-            if(sUrl) return `<div style="font-size:12px;color:#334155;margin-bottom:8px;font-weight:600">Pay instantly by card via the link below:</div>
-              <div style="background:#f5f3ff;border:1px solid #ddd6fe;border-radius:8px;padding:8px 12px;word-break:break-all">
-                <a href="${sUrl}" style="font-size:11px;color:#635bff;font-weight:700;text-decoration:none">${sUrl}</a>
+            if(sUrl) {
+              const cardTotal = (CFG.gstRegistered !== false ? lineTotal * (1 + (Number(CFG.gst) || 0.1)) : lineTotal);
+              const cardSurcharge = cardTotal * 0.017;
+              const cardGrandTotal = cardTotal + cardSurcharge;
+              return `<div style="font-size:12px;color:#334155;margin-bottom:8px;font-weight:600">Pay instantly by card via the link below:</div>
+              <div style="background:#f5f3ff;border:1.5px solid #c4b5fd;border-radius:8px;padding:10px 14px;word-break:break-all;margin-bottom:10px">
+                <a href="${sUrl}" style="font-size:12px;color:#635bff;font-weight:700;text-decoration:none">${sUrl}</a>
               </div>
-              <div style="font-size:10px;color:#94a3b8;margin-top:6px">Ref: ${esc(invNum)} is pre-filled automatically</div>`;
+              <div style="background:#fef3c7;border:1.5px solid #f59e0b;border-radius:8px;padding:10px 14px;margin-bottom:8px">
+                <div style="font-size:12px;color:#92400e;font-weight:700">⚠ A 1.7% card processing fee applies</div>
+                <div style="font-size:11px;color:#78350f;margin-top:4px">Invoice total: ${fmt$(cardTotal)} + 1.7% fee: ${fmt$(cardSurcharge)}</div>
+                <div style="font-size:14px;color:#92400e;font-weight:800;margin-top:4px">Total to pay by card: ${fmt$(cardGrandTotal)}</div>
+              </div>
+              <div style="font-size:10px;color:#94a3b8">Ref: ${esc(invNum)} is pre-filled automatically</div>`;
+            }
             return `<div style="font-size:12px;color:#64748b">Payment link available on request — contact us to pay by card.</div>`;
           })()}
         </div>
