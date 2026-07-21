@@ -8632,11 +8632,11 @@ function openVisualQuote(jobId) {
     html += '<link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@700;800&family=Barlow:wght@300;400;500;600;700&display=swap" rel="stylesheet">';
     html += '<style>';
     html += '*{box-sizing:border-box;margin:0;padding:0}body{font-family:Barlow,sans-serif;background:#fff;color:#1e2d4e;padding:40px;max-width:860px;margin:0 auto;font-size:13px}';
-    html += '.hdr{background:#1e2d4e;padding:26px 36px 22px;border-bottom:3px solid #f5821f}';
+    html += '.hdr{background:#1e2d4e;padding:26px 36px 22px;border-bottom:3px solid #f5821f;display:flex;justify-content:space-between;align-items:center}';
     html += '.hdr-name{font-family:"Barlow Condensed",sans-serif;font-size:28px;font-weight:800;letter-spacing:.04em;text-transform:uppercase;color:#fff}';
     html += '.hdr-rule{height:3px;background:#f5821f;margin:7px 0 8px}';
     html += '.hdr-sub{font-size:10px;font-weight:400;letter-spacing:.28em;text-transform:uppercase;color:#a8bdd4}';
-    html += '.hdr-c{text-align:right;padding:0 36px 22px;color:#a8bdd4;font-size:11.5px}';
+    html += '.hdr-c{text-align:right;color:#a8bdd4;font-size:11.5px;line-height:1.5}';
     html += '.title-bar{background:#253560;padding:12px 36px;display:flex;justify-content:space-between;align-items:center;border-bottom:2px solid #f5821f}';
     html += '.q-word{font-family:"Barlow Condensed",sans-serif;font-size:20px;font-weight:800;letter-spacing:.15em;text-transform:uppercase;color:#fff}';
     html += '.ref{font-family:"Barlow Condensed",sans-serif;font-size:16px;font-weight:700;color:#f5821f}';
@@ -8662,11 +8662,11 @@ function openVisualQuote(jobId) {
     html += '.t-row.grand .tv{color:#f5821f}';
     html += '@page{margin:0;size:auto}';
     html += '*{-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important}';
-    html += '.noprint{display:none!important}';
+    html += '@media print{.noprint{display:none!important}}';
     html += '</style></head><body>';
 
-    html += '<div class="hdr"><div class="hdr-name">Sydney Automation Co.</div><div class="hdr-rule"></div><div class="hdr-sub">L I G H T I N G &nbsp; C O N T R O L &nbsp; S P E C I A L I S T S</div></div>';
-    html += '<div class="hdr-c">' + esc(g('vqABN')) + '<br>' + esc(g('vqEmail')) + '</div>';
+    html += '<div class="hdr"><div><div class="hdr-name">Sydney Automation Co.</div><div class="hdr-rule"></div><div class="hdr-sub">L I G H T I N G &nbsp; C O N T R O L &nbsp; S P E C I A L I S T S</div></div>';
+    html += '<div class="hdr-c">' + esc(g('vqABN')) + '<br>' + esc(g('vqEmail')) + '</div></div>';
     html += '<div class="title-bar"><div class="q-word">Quote</div><div class="ref">' + esc(g('vqRef')) + '</div></div>';
 
     var cn = esc(g('vqClientName')), cc = esc(g('vqClientContact')), cs = esc(g('vqClientSite'));
@@ -8727,7 +8727,7 @@ function openVisualQuote(jobId) {
     var ft = g('vqFooter');
     if (ft) html += '<div style="background:#1e2d4e;padding:14px 36px;display:flex;align-items:center;justify-content:center;border-top:3px solid #f5821f"><span style="color:#a8bdd4;font-family:Barlow Condensed,sans-serif;font-size:11px;font-weight:400;letter-spacing:.1em;text-transform:uppercase;text-align:center">' + esc(ft) + '</span></div>';
 
-    html += '<p style="text-align:center;margin-top:20px"><button onclick="window.print()" style="background:#1e2d4e;color:#fff;border:none;border-radius:4px;padding:10px 24px;font-size:12px;font-weight:700;cursor:pointer">🖨 Print / Save PDF</button></p>';
+    html += '<p class="noprint" style="text-align:center;margin-top:20px"><button onclick="window.print()" style="background:#1e2d4e;color:#fff;border:none;border-radius:4px;padding:10px 24px;font-size:12px;font-weight:700;cursor:pointer">🖨 Print / Save PDF</button></p>';
     html += '</body></html>';
     w.document.write(html);
     w.document.close();
