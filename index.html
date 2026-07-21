@@ -8561,33 +8561,34 @@ function openVisualQuote(jobId) {
   };
 
   window.vqCalcTotals = function() {
-    const rows = document.querySelectorAll('.vq-irow');
-    let subtotal = 0;
-    rows.forEach(tr => {
-      const qtyEl = tr.querySelector('.vq-td-qty');
-      const unitEl = tr.querySelector('.vq-td-unit');
-      const amtEl = tr.querySelector('.vq-td-amt');
-      const qty = parseFloat(String(qtyEl?.value || '').replace(/[^0-9.]/g, '')) || 0;
-      const unit = parseFloat(String(unitEl?.value || '').replace(/[^0-9.]/g, '')) || 0;
-      const amtRaw = parseFloat(String(amtEl?.value || '').replace(/[^0-9.]/g, '')) || 0;
-      let rowAmt = 0;
+    var rows = document.querySelectorAll('.vq-irow');
+    var subtotal = 0;
+    rows.forEach(function(tr) {
+      var qtyEl = tr.querySelector('.vq-td-qty');
+      var unitEl = tr.querySelector('.vq-td-unit');
+      var amtEl = tr.querySelector('.vq-td-amt');
+      var qty = parseFloat(String(qtyEl ? qtyEl.value : '').replace(/[^0-9.]/g,'')) || 0;
+      var unit = parseFloat(String(unitEl ? unitEl.value : '').replace(/[^0-9.]/g,'')) || 0;
+      var amtRaw = parseFloat(String(amtEl ? amtEl.value : '').replace(/[^0-9.]/g,'')) || 0;
+      var rowAmt = 0;
       if (amtRaw > 0) {
         rowAmt = amtRaw;
       } else if (qty > 0 && unit > 0) {
         rowAmt = qty * unit;
+        if (amtEl) amtEl.value = rowAmt.toFixed(2);
       }
       subtotal += rowAmt;
     });
-    const totalEl = document.getElementById('vqTotal');
-    const subEl = document.getElementById('vqSubtotal');
-    const gstEl = document.getElementById('vqGst');
-    const gstLabel = document.getElementById('vqGstLabel');
-    const gstRow = document.getElementById('vqGstRow');
-    const gstOn = typeof CFG !== 'undefined' && CFG.gstRegistered !== false;
-    const gstPct = gstOn ? Math.round((Number(CFG.gst) || 0.1) * 100) : 0;
-    const gst = gstOn ? subtotal * (gstPct / 100) : 0;
-    const total = subtotal + gst;
-    const fmt$ = function(v) { return '$' + Number(v).toLocaleString('en-AU', {minimumFractionDigits:2,maximumFractionDigits:2}); };
+    var totalEl = document.getElementById('vqTotal');
+    var subEl = document.getElementById('vqSubtotal');
+    var gstEl = document.getElementById('vqGst');
+    var gstLabel = document.getElementById('vqGstLabel');
+    var gstRow = document.getElementById('vqGstRow');
+    var gstOn = typeof CFG !== 'undefined' && CFG.gstRegistered !== false;
+    var gstPct = gstOn ? Math.round((Number(CFG.gst) || 0.1) * 100) : 0;
+    var gst = gstOn ? subtotal * (gstPct / 100) : 0;
+    var total = subtotal + gst;
+    var fmt$ = function(v) { return '$' + Number(v).toLocaleString('en-AU', {minimumFractionDigits:2,maximumFractionDigits:2}); };
     if (subEl) subEl.textContent = fmt$(subtotal);
     if (gstEl) gstEl.textContent = fmt$(gst);
     if (gstLabel) gstLabel.textContent = 'GST (' + gstPct + '%)';
@@ -8769,8 +8770,11 @@ function openVisualQuote(jobId) {
       ta.value = p.partNumber + ' — ' + p.description;
       vqAr(ta);
     }
+    var sp = partSellPrice(p);
     if (qtyIn) qtyIn.value = '1';
-    if (unitIn) unitIn.value = partSellPrice(p).toFixed(2);
+    if (unitIn) unitIn.value = sp.toFixed(2);
+    var amtIn = row.querySelector('.vq-td-amt');
+    if (amtIn) amtIn.value = (1 * sp).toFixed(2);
     const dd = el.closest('.vq-part-dd');
     if (dd) dd.style.display = 'none';
     vqCalcTotals();
