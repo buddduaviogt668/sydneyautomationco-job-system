@@ -8368,7 +8368,7 @@ function openVisualQuote(jobId) {
     <span id="vq-tlabel">SAC · Visual Quote — ${j.jobNumber}</span>
     <button class="vq-btn vq-btn-new" onclick="vqAddRow()">＋ Add Row</button>
     <button class="vq-btn vq-btn-save" onclick="vqSaveToJob('${jobId}')">💾 Save to Job</button>
-    <button class="vq-btn vq-btn-print" onclick="window.print()">🖨 Print / PDF</button>
+    <button class="vq-btn vq-btn-print" onclick="vqPrint()">🖨 Print / PDF</button>
     <button class="vq-btn vq-btn-close" onclick="document.getElementById('vq-overlay').remove()">✕ Close</button>
   </div>
 
@@ -8599,6 +8599,123 @@ function openVisualQuote(jobId) {
     const it = vqGetItems(); if (it.length > 1) { it.pop(); vqRenderItems(it); }
   };
 
+  window.vqPrint = function() {
+    vqCalcTotals();
+    var items = vqGetItems();
+    var gstOn = CFG.gstRegistered !== false;
+    var gstPct = Math.round((Number(CFG.gst) || 0.1) * 100);
+    var subtotal = 0;
+    items.forEach(function(it) {
+      subtotal += parseFloat(String(it.amount).replace(/[^0-9.]/g,'')) || 0;
+    });
+    var gst = gstOn ? subtotal * (gstPct / 100) : 0;
+    var total = subtotal + gst;
+    var fmt = function(v) { return '$' + v.toLocaleString('en-AU', {minimumFractionDigits:2,maximumFractionDigits:2}); };
+    var _e = function(s) { return (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); };
+    var q = document.getElementById('vq-quote');
+    var clone = q.cloneNode(true);
+    clone.querySelectorAll('input, textarea').forEach(function(el) {
+      var span = document.createElement('span');
+      span.textContent = el.value || el.textContent || '';
+      span.style.cssText = 'font-family:Barlow,sans-serif;font-size:13px;color:#1e2d4e;line-height:1.55;white-space:pre-wrap;border-bottom:1px dotted #d8dde6;min-height:20px;display:inline-block;width:100%';
+      el.parentNode.replaceChild(span, el);
+    });
+    var printDoc = window.open('', '_blank', 'width=900,height=750');
+    printDoc.document.write('<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Quote - ' + _e(items[0]?.desc || '') + '</title>');
+    printDoc.document.write('<link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@700;800&family=Barlow:wght@300;400;500;600;700&display=swap" rel="stylesheet">');
+    printDoc.document.write('<style>');
+    printDoc.document.write('*{box-sizing:border-box;margin:0;padding:0}body{font-family:Barlow,sans-serif;background:#fff;color:#1e2d4e;padding:40px;max-width:860px;margin:0 auto}');
+    printDoc.document.write('.hdr{background:#1e2d4e;display:grid;grid-template-columns:1fr auto;align-items:stretch}');
+    printDoc.document.write('.hdr-l{padding:26px 36px 22px;border-bottom:3px solid #f5821f}');
+    printDoc.document.write('.hdr-name{font-family:"Barlow Condensed",sans-serif;font-size:28px;font-weight:800;letter-spacing:.04em;text-transform:uppercase;color:#fff;line-height:1}');
+    printDoc.document.write('.hdr-rule{height:3px;background:#f5821f;margin:7px 0 8px}');
+    printDoc.document.write('.hdr-sub{font-size:10px;font-weight:400;letter-spacing:.28em;text-transform:uppercase;color:#a8bdd4}');
+    printDoc.document.write('.hdr-c{padding:26px 36px 22px;text-align:right;border-left:1px solid rgba(255,255,255,.08);display:flex;flex-direction:column;justify-content:center;gap:3px}');
+    printDoc.document.write('.hdr-c span{color:#a8bdd4;font-size:11.5px}');
+    printDoc.document.write('.title-bar{background:#253560;padding:12px 36px;display:flex;justify-content:space-between;align-items:center;border-bottom:2px solid #f5821f}');
+    printDoc.document.write('.q-word{font-family:"Barlow Condensed",sans-serif;font-size:20px;font-weight:800;letter-spacing:.15em;text-transform:uppercase;color:#fff}');
+    printDoc.document.write('.ref{font-family:"Barlow Condensed",sans-serif;font-size:16px;font-weight:700;color:#f5821f}');
+    printDoc.document.write('.two-col{display:grid;grid-template-columns:1fr 1fr;border-bottom:1px solid #d8dde6}');
+    printDoc.document.write('.col{padding:20px 36px}');
+    printDoc.document.write('.col:first-child{border-right:1px solid #d8dde6}');
+    printDoc.document.write('.col-label{font-family:"Barlow Condensed",sans-serif;font-size:9px;font-weight:700;letter-spacing:.22em;text-transform:uppercase;color:#1e2d4e;border-bottom:2px solid #f5821f;padding-bottom:5px;margin-bottom:12px;display:inline-block}');
+    printDoc.document.write('.scope{padding:16px 36px;background:#f7f8fa;border-bottom:1px solid #d8dde6}');
+    printDoc.document.write('.scope .val{font-size:13px;line-height:1.65;color:#1e2d4e;white-space:pre-wrap}');
+    printDoc.document.write('table{width:100%;border-collapse:collapse}');
+    printDoc.document.write('th{background:#1e2d4e;color:#fff;font-family:"Barlow Condensed",sans-serif;font-size:9.5px;font-weight:700;letter-spacing:.18em;text-transform:uppercase;padding:10px;text-align:left}');
+    printDoc.document.write('th:first-child{padding-left:36px;width:38px}');
+    printDoc.document.write('th:last-child{padding-right:36px;text-align:right}');
+    printDoc.document.write('th:nth-child(3),th:nth-child(4){text-align:center;width:72px}');
+    printDoc.document.write('th:nth-child(5){text-align:right;width:100px}');
+    printDoc.document.write('td{vertical-align:top;padding:10px;border-bottom:1px solid #d8dde6;font-size:13px;line-height:1.5;color:#1e2d4e}');
+    printDoc.document.write('td:first-child{padding-left:36px;font-family:"Barlow Condensed",sans-serif;font-weight:700;font-size:12px;color:#f5821f;white-space:nowrap}');
+    printDoc.document.write('td:last-child{padding-right:36px;text-align:right;font-weight:600;white-space:nowrap}');
+    printDoc.document.write('td:nth-child(3),td:nth-child(4){text-align:center}');
+    printDoc.document.write('tr:nth-child(even) td{background:#f7f8fa}');
+    printDoc.document.write('.totals{display:flex;justify-content:flex-end;padding:0 36px;border-bottom:1px solid #d8dde6}');
+    printDoc.document.write('.tot-inner{min-width:270px;padding:14px 0}');
+    printDoc.document.write('.t-row{display:flex;justify-content:space-between;padding:5px 0;font-size:13px;color:#6b7a94;border-bottom:1px solid #d8dde6}');
+    printDoc.document.write('.t-row.grand{font-family:"Barlow Condensed",sans-serif;font-size:17px;font-weight:800;color:#1e2d4e;border-top:2px solid #1e2d4e;margin-top:6px;padding-top:10px;border-bottom:none}');
+    printDoc.document.write('.t-row.grand .t-val{color:#f5821f}');
+    printDoc.document.write('@page{margin:0;size:auto}');
+    printDoc.document.write('*{-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important;color-adjust:exact!important}');
+    printDoc.document.write('.noprint{display:none!important}');
+    printDoc.document.write('</style></head><body>');
+
+    var g = function(id) { var el = document.getElementById(id); return el ? (el.value || el.textContent || '') : ''; };
+    var scope = g('vqScope');
+    var notes = g('vqNotes');
+
+    printDoc.document.write('<div class="hdr"><div class="hdr-l"><div class="hdr-name">Sydney Automation Co.</div><div class="hdr-rule"></div><div class="hdr-sub">L I G H T I N G &nbsp; C O N T R O L &nbsp; S P E C I A L I S T S</div></div><div class="hdr-c"><span>' + _e(g('vqABN')) + '</span><span>' + _e(g('vqEmail')) + '</span></div></div>');
+    printDoc.document.write('<div class="title-bar"><div class="q-word">Quote</div><div class="ref">' + _e(g('vqRef')) + '</div></div>');
+    printDoc.document.write('<div class="two-col"><div class="col"><div class="col-label">Quote For</div><div style="font-size:13.5px;font-weight:600;color:#1e2d4e">' + _e(g('vqClientName')) + '</div><div style="font-size:12.5px;font-weight:400;color:#6b7a94;margin-top:3px">' + _e(g('vqClientContact')) + '</div><div style="font-size:12.5px;font-weight:400;color:#6b7a94">' + _e(g('vqClientSite')) + '</div><div style="font-size:12.5px;font-weight:400;color:#6b7a94">' + _e(g('vqClientPhone')) + '</div><div style="font-size:12.5px;font-weight:400;color:#6b7a94">' + _e(g('vqClientEmail')) + '</div></div><div class="col"><div class="col-label">Details</div>');
+    printDoc.document.write('<div style="display:grid;grid-template-columns:auto 1fr;gap:5px 14px;align-items:baseline"><span style="font-size:11px;font-weight:600;color:#6b7a94">Job Ref</span><span style="font-size:12px;font-weight:500;color:#1e2d4e">' + _e(g('vqJobRef')) + '</span>');
+    printDoc.document.write('<span style="font-size:11px;font-weight:600;color:#6b7a94">Quote Ref</span><span style="font-size:12px;font-weight:500;color:#1e2d4e">' + _e(g('vqRef2')) + '</span>');
+    printDoc.document.write('<span style="font-size:11px;font-weight:600;color:#6b7a94">Site Date</span><span style="font-size:12px;font-weight:500;color:#1e2d4e">' + _e(g('vqSiteDate')) + '</span>');
+    printDoc.document.write('<span style="font-size:11px;font-weight:600;color:#6b7a94">Date</span><span style="font-size:12px;font-weight:500;color:#1e2d4e">' + _e(g('vqDate')) + '</span>');
+    printDoc.document.write('<span style="font-size:11px;font-weight:600;color:#6b7a94">Valid Until</span><span style="font-size:12px;font-weight:500;color:#1e2d4e">' + _e(g('vqValidDate')) + '</span></div></div></div>');
+
+    if (scope) { printDoc.document.write('<div class="scope"><div class="col-label">Scope of Work</div><div class="val">' + _e(scope) + '</div></div>'); }
+
+    printDoc.document.write('<table><thead><tr><th>#</th><th>Description</th><th>Qty</th><th>Unit ($)</th><th>Amount ($)</th></tr></thead><tbody>');
+    items.forEach(function(it) {
+      var rowAmt = parseFloat(String(it.amount).replace(/[^0-9.]/g,'')) || 0;
+      printDoc.document.write('<tr><td>' + _e(it.num) + '</td><td>' + _e(it.desc) + '</td><td style="text-align:center">' + _e(it.qty) + '</td><td style="text-align:right">' + (parseFloat(it.unit) ? fmt(parseFloat(it.unit)) : '') + '</td><td>' + (rowAmt > 0 ? fmt(rowAmt) : '') + '</td></tr>');
+    });
+    printDoc.document.write('</tbody></table>');
+
+    printDoc.document.write('<div class="totals"><div class="tot-inner">');
+    printDoc.document.write('<div class="t-row"><span>Subtotal (ex GST)</span><span>' + fmt(subtotal) + '</span></div>');
+    if (gstOn) { printDoc.document.write('<div class="t-row"><span>GST (' + gstPct + '%)</span><span>' + fmt(gst) + '</span></div>'); }
+    printDoc.document.write('<div class="t-row grand"><span>Total Due' + (gstOn ? ' (inc GST)' : '') + '</span><span class="t-val">' + fmt(total) + '</span></div>');
+    printDoc.document.write('</div></div>');
+
+    if (notes) { printDoc.document.write('<div style="padding:16px 36px;background:#f7f8fa;border-bottom:1px solid #d8dde6"><div class="col-label">Additional Notes</div><div style="font-size:13px;line-height:1.65;color:#1e2d4e;white-space:pre-wrap;margin-top:8px">' + _e(notes) + '</div></div>'); }
+
+    printDoc.document.write('<div style="padding:16px 36px;border-bottom:1px solid #d8dde6"><div class="col-label" style="display:block;margin-bottom:12px">Payment</div><div style="display:grid;grid-template-columns:repeat(3,1fr);gap:14px">');
+    ['vqPayBank','vqPayID','vqPayCard'].forEach(function(id) {
+      var v = g(id);
+      if (v) { printDoc.document.write('<div style="border:1px solid #d8dde6;border-top:2px solid #f5821f;border-radius:3px;padding:12px 14px;background:#f7f8fa"><div style="white-space:pre-wrap;font-size:12px;color:#6b7a94;line-height:1.65">' + _e(v) + '</div></div>'); }
+    });
+    printDoc.document.write('</div></div>');
+
+    var ex = g('vqExclusions');
+    var tc = g('vqTerms');
+    if (ex || tc) {
+      printDoc.document.write('<div style="display:grid;grid-template-columns:1fr 1fr;border-bottom:1px solid #d8dde6">');
+      if (ex) { printDoc.document.write('<div style="padding:16px 36px;border-right:1px solid #d8dde6"><div class="col-label" style="display:block;margin-bottom:8px">Exclusions</div><div style="font-size:12px;line-height:1.72;color:#6b7a94;white-space:pre-wrap">' + _e(ex) + '</div></div>'); }
+      if (tc) { printDoc.document.write('<div style="padding:16px 36px"><div class="col-label" style="display:block;margin-bottom:8px">Terms &amp; Conditions</div><div style="font-size:12px;line-height:1.72;color:#6b7a94;white-space:pre-wrap">' + _e(tc) + '</div></div>'); }
+      printDoc.document.write('</div>');
+    }
+
+    var footer = g('vqFooter');
+    if (footer) { printDoc.document.write('<div style="background:#1e2d4e;padding:14px 36px;display:flex;align-items:center;justify-content:center;border-top:3px solid #f5821f"><span style="color:#a8bdd4;font-family:Barlow Condensed,sans-serif;font-size:11px;font-weight:400;letter-spacing:.1em;text-transform:uppercase">' + _e(footer) + '</span></div>'); }
+
+    printDoc.document.write('<button onclick="window.print()" style="display:block;margin:20px auto;background:#1e2d4e;color:#fff;border:none;border-radius:4px;padding:10px 24px;font-size:12px;font-weight:700;cursor:pointer">🖨 Print / Save PDF</button>');
+    printDoc.document.write('</body></html>');
+    printDoc.document.close();
+  };
+
   // ── PART SEARCH ─────────────────────────────────────────────────────
   window.vqPartSearch = function(input) {
     const val = input.value.trim().toLowerCase();
@@ -8704,11 +8821,10 @@ function openVisualQuote(jobId) {
   vqSet('vqFooter', defaults.footerLine);
 
   vqRenderItems(defaults.items);
-  vqCalcTotals();
+  setTimeout(function() { vqCalcTotals(); }, 50);
   document.querySelectorAll('#vq-overlay textarea').forEach(vqAr);
-
   var vqBody = document.getElementById('vqItemsBody');
-  if (vqBody) vqBody.addEventListener('input', function() { vqCalcTotals(); });
+  if (vqBody) vqBody.addEventListener('input', function() { window.vqCalcTotals(); });
 }
 
 
