@@ -8560,43 +8560,34 @@ function openVisualQuote(jobId) {
 
   window.vqCalcTotals = function() {
     const rows = document.querySelectorAll('.vq-irow');
-    console.log('[VQ] vqCalcTotals called, rows found:', rows.length);
     let subtotal = 0;
     rows.forEach(tr => {
       const qtyEl = tr.querySelector('.vq-td-qty');
       const unitEl = tr.querySelector('.vq-td-unit');
-      const amtInput = tr.querySelector('.vq-td-amt');
-      const qty = parseFloat(qtyEl?.value) || 0;
-      const unit = parseFloat(unitEl?.value) || 0;
-      console.log('[VQ] row:', { qty: qtyEl?.value, unit: unitEl?.value, amt: amtInput?.value, qtyParsed: qty, unitParsed: unit });
+      const amtEl = tr.querySelector('.vq-td-amt');
+      const qty = parseFloat(String(qtyEl?.value || '').replace(/[^0-9.]/g, '')) || 0;
+      const unit = parseFloat(String(unitEl?.value || '').replace(/[^0-9.]/g, '')) || 0;
+      const amtRaw = parseFloat(String(amtEl?.value || '').replace(/[^0-9.]/g, '')) || 0;
+      let rowAmt = 0;
       if (qty > 0 && unit > 0) {
-        const amt = qty * unit;
-        if (amtInput) amtInput.value = amt.toFixed(2);
-        subtotal += amt;
-      } else if (amtInput && amtInput.value) {
-        const raw = amtInput.value.replace(/[^0-9.]/g, '');
-        const parsed = parseFloat(raw) || 0;
-        console.log('[VQ] using amount directly:', raw, parsed);
-        subtotal += parsed;
+        rowAmt = qty * unit;
+        if (amtEl) amtEl.value = rowAmt.toFixed(2);
+      } else if (amtRaw > 0) {
+        rowAmt = amtRaw;
       }
+      subtotal += rowAmt;
     });
-    const gstRegistered = CFG.gstRegistered !== false;
-    const gstRatePct = Math.round((Number(CFG.gst) || 0.1) * 100);
-    const gstRate = gstRegistered ? gstRatePct / 100 : 0;
-    const gstAmt = subtotal * gstRate;
-    const total = subtotal + gstAmt;
-    const fmt = v => v > 0 ? ('$' + v.toLocaleString('en-AU', {minimumFractionDigits:2,maximumFractionDigits:2})) : '$0.00';
-    const subEl = document.getElementById('vqSubtotal');
-    const gstEl = document.getElementById('vqGst');
-    const gstLabel = document.getElementById('vqGstLabel');
-    const gstRow = document.getElementById('vqGstRow');
-    const totalEl = document.getElementById('vqTotal');
-    console.log('[VQ] results:', { subtotal, gstAmt, total, subEl: !!subEl, gstEl: !!gstEl, gstRow: !!gstRow, totalEl: !!totalEl, gstRegistered });
-    if (subEl) subEl.textContent = fmt(subtotal);
-    if (gstEl) gstEl.textContent = fmt(gstAmt);
-    if (gstLabel) gstLabel.textContent = 'GST (' + gstRatePct + '%)';
-    if (gstRow) gstRow.style.display = gstRegistered ? '' : 'none';
-    if (totalEl) totalEl.value = gstRegistered ? fmt(total) : fmt(subtotal);
+    const gstOn = CFG.gstRegistered !== false;
+    const gstPct = Math.round((Number(CFG.gst) || 0.1) * 100);
+    const gst = gstOn ? subtotal * (gstPct / 100) : 0;
+    const total = subtotal + gst;
+    const fmt = v => '$' + v.toLocaleString('en-AU', {minimumFractionDigits:2,maximumFractionDigits:2});
+    const $ = id => document.getElementById(id);
+    if ($('vqSubtotal')) $('vqSubtotal').textContent = fmt(subtotal);
+    if ($('vqGst')) $('vqGst').textContent = fmt(gst);
+    if ($('vqGstLabel')) $('vqGstLabel').textContent = 'GST (' + gstPct + '%)';
+    if ($('vqGstRow')) $('vqGstRow').style.display = gstOn ? '' : 'none';
+    if ($('vqTotal')) $('vqTotal').value = gstOn ? fmt(total) : fmt(subtotal);
   };
 
   window.vqAddRow = function() {
@@ -8715,6 +8706,9 @@ function openVisualQuote(jobId) {
   vqRenderItems(defaults.items);
   vqCalcTotals();
   document.querySelectorAll('#vq-overlay textarea').forEach(vqAr);
+
+  var vqBody = document.getElementById('vqItemsBody');
+  if (vqBody) vqBody.addEventListener('input', function() { vqCalcTotals(); });
 }
 
 
