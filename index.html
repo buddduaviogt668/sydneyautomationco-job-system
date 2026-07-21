@@ -8606,8 +8606,17 @@ function openVisualQuote(jobId) {
 
   window.vqPrintPdf = function() {
     window.vqCalcTotals();
-    var items = window.vqGetItems();
-    console.log('[VQ-PRINT] items:', JSON.stringify(items));
+    var trs = document.querySelectorAll('#vq-quote .vq-irow');
+    var items = [];
+    trs.forEach(function(tr) {
+      items.push({
+        num: (tr.querySelector('.vq-td-num') || {}).value || '',
+        desc: (tr.querySelector('.vq-td-ta') || {}).value || '',
+        qty: (tr.querySelector('.vq-td-qty') || {}).value || '',
+        unit: (tr.querySelector('.vq-td-unit') || {}).value || '',
+        amount: (tr.querySelector('.vq-td-amt') || {}).value || ''
+      });
+    });
     var gstOn = CFG.gstRegistered !== false;
     var gstPct = Math.round((Number(CFG.gst) || 0.1) * 100);
     var subtotal = 0;
