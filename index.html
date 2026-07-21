@@ -8571,25 +8571,28 @@ function openVisualQuote(jobId) {
       const unit = parseFloat(String(unitEl?.value || '').replace(/[^0-9.]/g, '')) || 0;
       const amtRaw = parseFloat(String(amtEl?.value || '').replace(/[^0-9.]/g, '')) || 0;
       let rowAmt = 0;
-      if (qty > 0 && unit > 0) {
-        rowAmt = qty * unit;
-        if (amtEl) amtEl.value = rowAmt.toFixed(2);
-      } else if (amtRaw > 0) {
+      if (amtRaw > 0) {
         rowAmt = amtRaw;
+      } else if (qty > 0 && unit > 0) {
+        rowAmt = qty * unit;
       }
       subtotal += rowAmt;
     });
-    const gstOn = CFG.gstRegistered !== false;
-    const gstPct = Math.round((Number(CFG.gst) || 0.1) * 100);
+    const totalEl = document.getElementById('vqTotal');
+    const subEl = document.getElementById('vqSubtotal');
+    const gstEl = document.getElementById('vqGst');
+    const gstLabel = document.getElementById('vqGstLabel');
+    const gstRow = document.getElementById('vqGstRow');
+    const gstOn = typeof CFG !== 'undefined' && CFG.gstRegistered !== false;
+    const gstPct = gstOn ? Math.round((Number(CFG.gst) || 0.1) * 100) : 0;
     const gst = gstOn ? subtotal * (gstPct / 100) : 0;
     const total = subtotal + gst;
-    const fmt = v => '$' + v.toLocaleString('en-AU', {minimumFractionDigits:2,maximumFractionDigits:2});
-    const $ = id => document.getElementById(id);
-    if ($('vqSubtotal')) $('vqSubtotal').textContent = fmt(subtotal);
-    if ($('vqGst')) $('vqGst').textContent = fmt(gst);
-    if ($('vqGstLabel')) $('vqGstLabel').textContent = 'GST (' + gstPct + '%)';
-    if ($('vqGstRow')) $('vqGstRow').style.display = gstOn ? '' : 'none';
-    if ($('vqTotal')) $('vqTotal').value = gstOn ? fmt(total) : fmt(subtotal);
+    const fmt$ = function(v) { return '$' + Number(v).toLocaleString('en-AU', {minimumFractionDigits:2,maximumFractionDigits:2}); };
+    if (subEl) subEl.textContent = fmt$(subtotal);
+    if (gstEl) gstEl.textContent = fmt$(gst);
+    if (gstLabel) gstLabel.textContent = 'GST (' + gstPct + '%)';
+    if (gstRow) gstRow.style.display = gstOn ? '' : 'none';
+    if (totalEl) totalEl.value = fmt$(total);
   };
 
   window.vqAddRow = function() {
