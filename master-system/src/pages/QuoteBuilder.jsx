@@ -229,10 +229,20 @@ export default function QuoteBuilder() {
               </AnimatePresence>
             </div>
 
-            {/* Totals row */}
+            {/* Totals rows */}
             <div className="border-t border-slate-200 bg-slate-50 px-5 py-3 grid grid-cols-12 gap-2 text-sm">
               <div className="col-span-7 text-right text-slate-500 font-semibold pr-2">Subtotal (ex GST)</div>
               <div className="col-span-4 text-right font-bold text-slate-800">{fmt$(calc.subtotalPrice)}</div>
+            </div>
+            {config.gstRegistered && (
+              <div className="border-t border-slate-200 bg-slate-50 px-5 py-3 grid grid-cols-12 gap-2 text-sm">
+                <div className="col-span-7 text-right text-slate-500 font-semibold pr-2">GST ({config.gstRate || 10}%)</div>
+                <div className="col-span-4 text-right font-bold text-slate-800">{fmt$(calc.gst)}</div>
+              </div>
+            )}
+            <div className="border-t border-slate-200 bg-indigo-50 px-5 py-3 grid grid-cols-12 gap-2 text-sm">
+              <div className="col-span-7 text-right text-indigo-700 font-bold pr-2">Total (inc GST)</div>
+              <div className="col-span-4 text-right font-black text-indigo-800">{fmt$(calc.total)}</div>
             </div>
           </div>
 
