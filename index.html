@@ -8442,11 +8442,11 @@ function openVisualQuote(jobId) {
       <div class="vq-tot-inner">
         <div class="vq-t-row">
           <span>Subtotal (ex GST)</span>
-          <input class="vq-t-val" id="vqSubtotal" value="" readonly style="border:none;background:transparent" />
+          <span class="vq-t-val" id="vqSubtotal"></span>
         </div>
         <div class="vq-t-row" id="vqGstRow">
-          <span>GST (${Math.round((CFG.gst || 0.1) * 100)}%)</span>
-          <input class="vq-t-val" id="vqGst" value="" readonly style="border:none;background:transparent" />
+          <span id="vqGstLabel">GST (10%)</span>
+          <span class="vq-t-val" id="vqGst"></span>
         </div>
         <div class="vq-t-row grand">
           <span>Total Due (inc GST)</span>
@@ -8570,16 +8570,19 @@ function openVisualQuote(jobId) {
       subtotal += amt;
     });
     const gstRegistered = CFG.gstRegistered !== false;
-    const gstRate = gstRegistered ? (Number(CFG.gst) || 0.1) : 0;
+    const gstRatePct = Math.round((Number(CFG.gst) || 0.1) * 100);
+    const gstRate = gstRegistered ? gstRatePct / 100 : 0;
     const gstAmt = subtotal * gstRate;
     const total = subtotal + gstAmt;
-    const fmt = v => v > 0 ? ('$' + v.toLocaleString('en-AU', {minimumFractionDigits:2,maximumFractionDigits:2})) : '';
+    const fmt = v => v > 0 ? ('$' + v.toLocaleString('en-AU', {minimumFractionDigits:2,maximumFractionDigits:2})) : '$0.00';
     const subEl = document.getElementById('vqSubtotal');
     const gstEl = document.getElementById('vqGst');
+    const gstLabel = document.getElementById('vqGstLabel');
     const gstRow = document.getElementById('vqGstRow');
     const totalEl = document.getElementById('vqTotal');
-    if (subEl) subEl.value = fmt(subtotal);
-    if (gstEl) gstEl.value = fmt(gstAmt);
+    if (subEl) subEl.textContent = fmt(subtotal);
+    if (gstEl) gstEl.textContent = fmt(gstAmt);
+    if (gstLabel) gstLabel.textContent = 'GST (' + gstRatePct + '%)';
     if (gstRow) gstRow.style.display = gstRegistered ? '' : 'none';
     if (totalEl) totalEl.value = gstRegistered ? fmt(total) : fmt(subtotal);
   };
@@ -8644,7 +8647,7 @@ function openVisualQuote(jobId) {
       clientSite: g('vqClientSite'), clientPhone: g('vqClientPhone'), clientEmail: g('vqClientEmail'),
       jobRef: g('vqJobRef'), siteDate: g('vqSiteDate'), quoteDate: g('vqDate'), validDate: g('vqValidDate'),
       scopeText: g('vqScope'), items: vqGetItems(),
-      gstEnabled: CFG.gstRegistered !== false, gstAmt: g('vqGst'), grandTotal: g('vqTotal'),
+      gstEnabled: CFG.gstRegistered !== false, gstAmt: (document.getElementById('vqGst') || {}).textContent || '$0.00', grandTotal: g('vqTotal'),
       quoteNotes: g('vqNotes'), payBank: g('vqPayBank'), payPayID: g('vqPayID'), payCard: g('vqPayCard'),
       exclusionsText: g('vqExclusions'), termsText: g('vqTerms'), footerLine: g('vqFooter')
     };
