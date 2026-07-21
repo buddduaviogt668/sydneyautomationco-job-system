@@ -95,6 +95,7 @@ export default function QuoteBuilder() {
         <div style="font-size:12px;color:#64748b;margin-top:4px">${B.bizEmail || ''} · ${B.bizPhone || ''}</div>
         ${B.bizLicence ? `<div style="font-size:12px;color:#64748b">Lic: ${B.bizLicence}</div>` : ''}
         ${B.gstRegistered && B.bizABN ? `<div style="font-size:12px;color:#64748b">ABN: ${B.bizABN}</div>` : ''}
+        ${B.gstRegistered ? `<div style="font-size:12px;color:#64748b;margin-top:2px">GST Rate: ${B.gstRate || 10}%</div>` : ''}
       </div>
       <div style="text-align:right">
         <div style="font-size:11px;font-weight:700;color:#6366f1;text-transform:uppercase;letter-spacing:1px;margin-bottom:4px">${jobType === 'SAQ' ? 'QUOTATION' : 'TAX INVOICE'}</div>
