@@ -8575,7 +8575,7 @@ function openVisualQuote(jobId) {
         rowAmt = amtRaw;
       } else if (qty > 0 && unit > 0) {
         rowAmt = qty * unit;
-        if (amtEl) amtEl.value = rowAmt.toFixed(2);
+        if (amtEl && isFinite(rowAmt)) amtEl.value = rowAmt.toFixed(2);
       }
       subtotal += rowAmt;
     });
