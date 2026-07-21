@@ -8440,8 +8440,16 @@ function openVisualQuote(jobId) {
     <!-- TOTALS -->
     <div class="vq-totals">
       <div class="vq-tot-inner">
+        <div class="vq-t-row">
+          <span>Subtotal (ex GST)</span>
+          <input class="vq-t-val" id="vqSubtotal" value="" readonly style="border:none;background:transparent" />
+        </div>
+        <div class="vq-t-row" id="vqGstRow">
+          <span>GST (${Math.round((CFG.gst || 0.1) * 100)}%)</span>
+          <input class="vq-t-val" id="vqGst" value="" readonly style="border:none;background:transparent" />
+        </div>
         <div class="vq-t-row grand">
-          <span>Total Due</span>
+          <span>Total Due (inc GST)</span>
           <input class="vq-t-val" id="vqTotal" value="" placeholder="$0.00" />
         </div>
       </div>
@@ -8561,8 +8569,19 @@ function openVisualQuote(jobId) {
       if (amtInput) amtInput.value = amt > 0 ? amt.toFixed(2) : '';
       subtotal += amt;
     });
+    const gstRegistered = CFG.gstRegistered !== false;
+    const gstRate = gstRegistered ? (Number(CFG.gst) || 0.1) : 0;
+    const gstAmt = subtotal * gstRate;
+    const total = subtotal + gstAmt;
+    const fmt = v => v > 0 ? ('$' + v.toLocaleString('en-AU', {minimumFractionDigits:2,maximumFractionDigits:2})) : '';
+    const subEl = document.getElementById('vqSubtotal');
+    const gstEl = document.getElementById('vqGst');
+    const gstRow = document.getElementById('vqGstRow');
     const totalEl = document.getElementById('vqTotal');
-    if (totalEl) totalEl.value = subtotal > 0 ? ('$' + subtotal.toLocaleString('en-AU', {minimumFractionDigits:2,maximumFractionDigits:2})) : '';
+    if (subEl) subEl.value = fmt(subtotal);
+    if (gstEl) gstEl.value = fmt(gstAmt);
+    if (gstRow) gstRow.style.display = gstRegistered ? '' : 'none';
+    if (totalEl) totalEl.value = gstRegistered ? fmt(total) : fmt(subtotal);
   };
 
   window.vqAddRow = function() {
@@ -8625,7 +8644,7 @@ function openVisualQuote(jobId) {
       clientSite: g('vqClientSite'), clientPhone: g('vqClientPhone'), clientEmail: g('vqClientEmail'),
       jobRef: g('vqJobRef'), siteDate: g('vqSiteDate'), quoteDate: g('vqDate'), validDate: g('vqValidDate'),
       scopeText: g('vqScope'), items: vqGetItems(),
-      gstEnabled: false, gstAmt: '$0.00', grandTotal: g('vqTotal'),
+      gstEnabled: CFG.gstRegistered !== false, gstAmt: g('vqGst'), grandTotal: g('vqTotal'),
       quoteNotes: g('vqNotes'), payBank: g('vqPayBank'), payPayID: g('vqPayID'), payCard: g('vqPayCard'),
       exclusionsText: g('vqExclusions'), termsText: g('vqTerms'), footerLine: g('vqFooter')
     };
@@ -8679,6 +8698,7 @@ function openVisualQuote(jobId) {
   vqSet('vqFooter', defaults.footerLine);
 
   vqRenderItems(defaults.items);
+  vqCalcTotals();
   document.querySelectorAll('#vq-overlay textarea').forEach(vqAr);
 }
 
