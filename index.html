@@ -8533,7 +8533,7 @@ function openVisualQuote(jobId) {
         </td>
         <td><input class="vq-td-in vq-td-qty" style="text-align:center;width:60px" value="${e(item.qty)}" oninput="vqCalcTotals()" /></td>
         <td><input class="vq-td-in vq-td-unit" style="text-align:right" value="${e(item.unit)}" oninput="vqCalcTotals()" /></td>
-        <td><input class="vq-td-in vq-td-amt" style="text-align:right;font-weight:600" value="${e(item.amount)}" /></td>
+        <td><input class="vq-td-in vq-td-amt" style="text-align:right;font-weight:600" value="${e(item.amount)}" oninput="vqCalcTotals()" /></td>
       `;
       tbody.appendChild(tr);
       vqAr(tr.querySelector('textarea'));
@@ -8564,10 +8564,14 @@ function openVisualQuote(jobId) {
     rows.forEach(tr => {
       const qty = parseFloat(tr.querySelector('.vq-td-qty')?.value) || 0;
       const unit = parseFloat(tr.querySelector('.vq-td-unit')?.value) || 0;
-      const amt = qty * unit;
       const amtInput = tr.querySelector('.vq-td-amt');
-      if (amtInput) amtInput.value = amt > 0 ? amt.toFixed(2) : '';
-      subtotal += amt;
+      if (qty > 0 && unit > 0) {
+        const amt = qty * unit;
+        if (amtInput) amtInput.value = amt > 0 ? amt.toFixed(2) : '';
+        subtotal += amt;
+      } else if (amtInput && amtInput.value) {
+        subtotal += parseFloat(amtInput.value) || 0;
+      }
     });
     const gstRegistered = CFG.gstRegistered !== false;
     const gstRatePct = Math.round((Number(CFG.gst) || 0.1) * 100);
