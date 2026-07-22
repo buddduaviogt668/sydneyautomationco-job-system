@@ -15058,15 +15058,7 @@ body{font-family:'Barlow',sans-serif;background:#c8cdd8;color:#1e2d4e;padding:24
     </div>
   </div>
   ${qd.quoteNotes?`<!-- NOTES --><div style="padding:16px 36px;background:#f7f8fa;border-bottom:1px solid #d8dde6"><span style="font-family:'Barlow Condensed',sans-serif;font-size:9px;font-weight:700;letter-spacing:.22em;text-transform:uppercase;color:#1e2d4e;border-bottom:2px solid #f5821f;padding-bottom:5px;display:inline-block">Additional Notes</span><div style="font-size:13px;line-height:1.65;color:#1e2d4e;margin-top:8px">${nl(qd.quoteNotes)}</div></div>`:''}
-  <!-- PAYMENT -->
-  <div style="padding:16px 36px;border-bottom:1px solid #d8dde6">
-    <span style="font-family:'Barlow Condensed',sans-serif;font-size:9px;font-weight:700;letter-spacing:.22em;text-transform:uppercase;color:#1e2d4e;border-bottom:2px solid #f5821f;padding-bottom:5px;display:inline-block;margin-bottom:12px">Payment</span>
-    <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:14px">
-      ${qd.payBank?`<div style="border:1px solid #d8dde6;border-top:2px solid #f5821f;border-radius:3px;padding:12px 14px;background:#f7f8fa"><div style="font-family:'Barlow Condensed',sans-serif;font-size:9.5px;font-weight:700;letter-spacing:.15em;text-transform:uppercase;color:#1e2d4e;margin-bottom:8px">■ Bank Transfer</div><div style="font-size:12px;color:#6b7a94;line-height:1.65">${nl(qd.payBank)}</div></div>`:''}
-      ${qd.payPayID?`<div style="border:1px solid #d8dde6;border-top:2px solid #f5821f;border-radius:3px;padding:12px 14px;background:#f7f8fa"><div style="font-family:'Barlow Condensed',sans-serif;font-size:9.5px;font-weight:700;letter-spacing:.15em;text-transform:uppercase;color:#1e2d4e;margin-bottom:8px">■ PayID (Instant)</div><div style="font-size:12px;color:#6b7a94;line-height:1.65">${nl(qd.payPayID)}</div></div>`:''}
-      ${qd.payCard?`<div style="border:1px solid #d8dde6;border-top:2px solid #f5821f;border-radius:3px;padding:12px 14px;background:#f7f8fa"><div style="font-family:'Barlow Condensed',sans-serif;font-size:9.5px;font-weight:700;letter-spacing:.15em;text-transform:uppercase;color:#1e2d4e;margin-bottom:8px">■ Card Payment</div><div style="font-size:12px;color:#6b7a94;line-height:1.65"><a href="${e(qd.payCard)}" target="_blank" style="color:#635bff">${nl(qd.payCard)}</a></div></div>`:''}
-    </div>
-  </div>
+  ${docPayment()}
   ${(qd.exclusionsText||qd.termsText)?`<!-- EXCLUSIONS + TERMS -->
   <div style="display:grid;grid-template-columns:1fr 1fr;border-bottom:1px solid #d8dde6">
     ${qd.exclusionsText?`<div style="padding:16px 36px;border-right:1px solid #d8dde6"><span style="font-family:'Barlow Condensed',sans-serif;font-size:9px;font-weight:700;letter-spacing:.22em;text-transform:uppercase;color:#1e2d4e;border-bottom:2px solid #f5821f;padding-bottom:5px;display:inline-block;margin-bottom:8px">Exclusions</span><div style="font-size:12px;line-height:1.72;color:#6b7a94">${nl(qd.exclusionsText)}</div></div>`:''}
