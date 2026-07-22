@@ -8723,7 +8723,10 @@ function openVisualQuote(jobId) {
         var cbox = document.getElementById('vqCardFeeBox');
         if (cbox && cbox.innerText) v += '\n\n' + cbox.innerText;
       }
-      if (v) html += '<div style="border:1px solid #d8dde6;border-top:2px solid #f5821f;border-radius:3px;padding:12px 14px;background:#f7f8fa"><div style="white-space:pre-wrap;font-size:12px;color:#6b7a94;line-height:1.65">' + esc(v) + '</div></div>';
+      if (v) {
+        var htmlV = esc(v).replace(/(https?:\/\/[^\s]+)/g, '<a href="$1" target="_blank" style="color:#f5821f;text-decoration:underline">$1</a>');
+        html += '<div style="border:1px solid #d8dde6;border-top:2px solid #f5821f;border-radius:3px;padding:12px 14px;background:#f7f8fa"><div style="white-space:pre-wrap;font-size:12px;color:#6b7a94;line-height:1.65">' + htmlV + '</div></div>';
+      }
     });
     html += '</div></div>';
 
