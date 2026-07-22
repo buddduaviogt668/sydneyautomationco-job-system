@@ -8496,7 +8496,8 @@ function openVisualQuote(jobId) {
               <div style="background:#f4f7fb;border-radius:8px;padding:12px;border-left:3px solid #635bff">
                 <div style="font-size:10px;font-weight:800;color:#635bff;text-transform:uppercase;letter-spacing:0.8px;margin-bottom:6px">💳 Card Payment</div>
                 ${sUrl?`<div style="font-size:12px;color:#334155;font-weight:600;word-break:break-all"><a href="${sUrl}" style="color:#635bff;text-decoration:none">${sUrl}</a></div>
-                   <div style="font-size:10px;color:#94a3b8;margin-top:4px">Pay by card instantly online</div>`:`<div style="font-size:12px;color:#334155">Available on request</div>
+                   <div style="font-size:10px;color:#94a3b8;margin-top:4px">Pay by card instantly online</div>
+                   <div id="vqCardFeeBox" style="margin-top:8px;font-size:11px;color:#64748b;line-height:1.6"></div>`:`<div style="font-size:12px;color:#334155">Available on request</div>
                    <div style="font-size:10px;color:#94a3b8;margin-top:4px">Contact us to pay by card</div>`}
               </div>
             </div>
@@ -8627,7 +8628,7 @@ function openVisualQuote(jobId) {
     if (cardFeeEl) {
       var cardFee = total * 0.017;
       var totalCard = total + cardFee;
-      cardFeeEl.innerHTML = '1.7% Card Surcharge: <strong style="color:#1e2d4e">' + fmt$(cardFee) + '</strong><br>Total via Card: <strong style="color:#1e2d4e">' + fmt$(totalCard) + '</strong>';
+      cardFeeEl.innerHTML = '<div style="background:#fef3c7;border:1.5px solid #f59e0b;border-radius:8px;padding:10px 14px;margin-top:8px"><div style="font-size:11px;color:#92400e;font-weight:700">⚠ A 1.7% card processing fee applies</div><div style="font-size:10px;color:#78350f;margin-top:4px">Quote total: ' + fmt$(total) + ' + 1.7% fee: ' + fmt$(cardFee) + '</div><div style="font-size:13px;color:#92400e;font-weight:800;margin-top:4px">Total Payable by Card: ' + fmt$(totalCard) + '</div></div>';
     }
   };
 
@@ -8745,6 +8746,12 @@ function openVisualQuote(jobId) {
     if (n) html += '<div style="padding:16px 36px;background:#f7f8fa;border-bottom:1px solid #d8dde6"><div class="col-label">Additional Notes</div><div style="font-size:13px;line-height:1.65;margin-top:8px;white-space:pre-wrap">' + esc(n) + '</div></div>';
 
     html += docPayment();
+    var _sUrl = (CFG.stripePaymentLinkBase||'').trim();
+    if (_sUrl && total > 0) {
+      var _cf = total * 0.017;
+      var _ct = total + _cf;
+      html += '<div style="padding:0 28px 16px"><div style="background:#fef3c7;border:1.5px solid #f59e0b;border-radius:8px;padding:10px 14px"><div style="font-size:12px;color:#92400e;font-weight:700">⚠ A 1.7% card processing fee applies</div><div style="font-size:11px;color:#78350f;margin-top:4px">Quote total: ' + fmt(total) + ' + 1.7% fee: ' + fmt(_cf) + '</div><div style="font-size:14px;color:#92400e;font-weight:800;margin-top:4px">Total Payable by Card: ' + fmt(_ct) + '</div></div></div>';
+    }
 
     var ex = g('vqExclusions'), tc = g('vqTerms');
     if (ex || tc) {
@@ -15106,11 +15113,24 @@ body{font-family:'Barlow',sans-serif;background:#c8cdd8;color:#1e2d4e;padding:24
         </div>`:''}
         <div style="background:#fff;border:2px solid #635bff;border-left:5px solid #635bff;border-radius:10px;padding:18px;border-left:4px solid #635bff">
           <div style="font-family:Barlow Condensed,sans-serif;font-size:13px;font-weight:800;color:#635bff;text-transform:uppercase;letter-spacing:1px;margin-bottom:8px">💳 Card Payment</div>
-          ${sUrl?`<div style="font-size:12px;color:#334155;margin-bottom:8px;font-weight:600">Pay instantly by card via the link below:</div>
-          <div style="background:#f5f3ff;border:1.5px solid #c4b5fd;border-radius:8px;padding:10px 14px;word-break:break-all;margin-bottom:10px">
-            <a href="${sUrl}" style="font-size:12px;color:#635bff;font-weight:700;text-decoration:none">${sUrl}</a>
-          </div>
-          <div style="font-size:10px;color:#94a3b8">Ref: ${e(quoteRef)} is pre-filled automatically</div>`:`<div style="font-size:12px;color:#64748b">Payment link available on request — contact us to pay by card.</div>`}
+          ${(()=>{
+            if(sUrl) {
+              const qTotal = parseFloat((qd.grandTotal||'').replace(/[^0-9.]/g,'')) || 0;
+              const cardFee = qTotal * 0.017;
+              const cardGrandTotal = qTotal + cardFee;
+              return `<div style="font-size:12px;color:#334155;margin-bottom:8px;font-weight:600">Pay instantly by card via the link below:</div>
+              <div style="background:#f5f3ff;border:1.5px solid #c4b5fd;border-radius:8px;padding:10px 14px;word-break:break-all;margin-bottom:10px">
+                <a href="${sUrl}" style="font-size:12px;color:#635bff;font-weight:700;text-decoration:none">${sUrl}</a>
+              </div>
+              <div style="background:#fef3c7;border:1.5px solid #f59e0b;border-radius:8px;padding:10px 14px;margin-bottom:8px">
+                <div style="font-size:12px;color:#92400e;font-weight:700">⚠ A 1.7% card processing fee applies</div>
+                <div style="font-size:11px;color:#78350f;margin-top:4px">Quote total: ${fmt$(qTotal)} + 1.7% fee: ${fmt$(cardFee)}</div>
+                <div style="font-size:14px;color:#92400e;font-weight:800;margin-top:4px">Total Payable by Card: ${fmt$(cardGrandTotal)}</div>
+              </div>
+              <div style="font-size:10px;color:#94a3b8">Ref: ${e(quoteRef)} is pre-filled automatically</div>`;
+            }
+            return `<div style="font-size:12px;color:#64748b">Payment link available on request — contact us to pay by card.</div>`;
+          })()}
         </div>
       </div>
       ${qrUrl?`<div style="flex-shrink:0;text-align:center">
