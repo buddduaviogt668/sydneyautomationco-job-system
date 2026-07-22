@@ -8478,6 +8478,7 @@ function openVisualQuote(jobId) {
         <div class="vq-pay-box">
           <div class="vq-pay-title">■ Card Payment</div>
           <textarea class="vq-pay-ta" id="vqPayCard" rows="4" oninput="vqAr(this)"></textarea>
+          <div id="vqCardFeeBox" style="font-size:12.5px;color:#6b7a94;margin-top:8px;line-height:1.5"></div>
         </div>
       </div>
     </div>
@@ -8594,6 +8595,12 @@ function openVisualQuote(jobId) {
     if (gstLabel) gstLabel.textContent = 'GST (' + gstPct + '%)';
     if (gstRow) gstRow.style.display = gstOn ? '' : 'none';
     if (totalEl) totalEl.value = fmt$(total);
+    var cardFeeEl = document.getElementById('vqCardFeeBox');
+    if (cardFeeEl) {
+      var cardFee = total * 0.017;
+      var totalCard = total + cardFee;
+      cardFeeEl.innerHTML = '1.7% Card Surcharge: <strong style="color:#1e2d4e">' + fmt$(cardFee) + '</strong><br>Total via Card: <strong style="color:#1e2d4e">' + fmt$(totalCard) + '</strong>';
+    }
   };
 
   window.vqAddRow = function() {
@@ -8712,6 +8719,10 @@ function openVisualQuote(jobId) {
     html += '<div style="padding:16px 36px;border-bottom:1px solid #d8dde6"><div class="col-label" style="display:block;margin-bottom:12px">Payment</div><div style="display:grid;grid-template-columns:repeat(3,1fr);gap:14px">';
     ['vqPayBank','vqPayID','vqPayCard'].forEach(function(id) {
       var v = g(id);
+      if (id === 'vqPayCard' && v) {
+        var cbox = document.getElementById('vqCardFeeBox');
+        if (cbox && cbox.innerText) v += '\n\n' + cbox.innerText;
+      }
       if (v) html += '<div style="border:1px solid #d8dde6;border-top:2px solid #f5821f;border-radius:3px;padding:12px 14px;background:#f7f8fa"><div style="white-space:pre-wrap;font-size:12px;color:#6b7a94;line-height:1.65">' + esc(v) + '</div></div>';
     });
     html += '</div></div>';
