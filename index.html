@@ -14955,6 +14955,17 @@ function _printV3Quote(j, qd){
   const e = s => (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
   const nl = s => e(s||'').replace(/\n/g,'<br>');
 
+  // Payment variables (matching invoice PDF setup)
+  const payId = CFG.bizPayID||'';
+  const bsb = CFG.bizBSB||'';
+  const acct = CFG.bizAccount||'';
+  const acctName = CFG.bizAccountName||CFG.bizName||'';
+  const qrData = payId ? `PayID:${payId}` : (bsb&&acct ? `BSB:${bsb.replace(/-/g,'')} ACCT:${acct} NAME:${acctName}` : '');
+  const qrUrl = qrData ? `https://api.qrserver.com/v1/create-qr-code/?size=120x120&data=${encodeURIComponent(qrData)}&color=0e1f3d` : '';
+  const quoteRef = qd.quoteRef || j.jobNumber;
+  const sUrl = stripePayUrl(j.id);
+  const fmt$ = v => '$'+Number(v).toLocaleString('en-AU',{minimumFractionDigits:2,maximumFractionDigits:2});
+
   // Items HTML
   const itemRows = (qd.items||[]).map((item,i)=>`
     <tr style="${i%2?'background:#f7f8fa':''}">
@@ -15058,7 +15069,42 @@ body{font-family:'Barlow',sans-serif;background:#c8cdd8;color:#1e2d4e;padding:24
     </div>
   </div>
   ${qd.quoteNotes?`<!-- NOTES --><div style="padding:16px 36px;background:#f7f8fa;border-bottom:1px solid #d8dde6"><span style="font-family:'Barlow Condensed',sans-serif;font-size:9px;font-weight:700;letter-spacing:.22em;text-transform:uppercase;color:#1e2d4e;border-bottom:2px solid #f5821f;padding-bottom:5px;display:inline-block">Additional Notes</span><div style="font-size:13px;line-height:1.65;color:#1e2d4e;margin-top:8px">${nl(qd.quoteNotes)}</div></div>`:''}
-  ${docPayment()}
+  <!-- HOW TO PAY -->
+  <div style="padding:20px 28px;border-top:1px solid #e8edf5;background:#f9fbff">
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:16px">
+      <div style="background:#0e1f3d;border-radius:6px;padding:5px 10px;font-family:Barlow Condensed,sans-serif;font-size:12px;font-weight:800;color:#fff;text-transform:uppercase;letter-spacing:1px">💳 How to Pay</div>
+    </div>
+    <div style="display:flex;gap:16px;align-items:flex-start">
+      <div style="flex:1;display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px">
+        ${bsb||acct?`<div style="background:#fff;border:1.5px solid #dde3ec;border-radius:10px;padding:14px;border-left:4px solid #0e1f3d">
+          <div style="font-family:Barlow Condensed,sans-serif;font-size:10px;font-weight:800;color:#0e1f3d;text-transform:uppercase;letter-spacing:1px;margin-bottom:8px">🏦 Bank Transfer</div>
+          <div style="font-size:12px;color:#334155;margin-bottom:2px"><strong>Account:</strong> ${e(acctName)}</div>
+          <div style="font-size:12px;color:#334155;margin-bottom:2px"><strong>BSB:</strong> ${e(bsb)}</div>
+          <div style="font-size:12px;color:#334155;margin-bottom:6px"><strong>Acct:</strong> ${e(acct)}</div>
+          <div style="font-size:10px;color:#f07020;font-weight:700">Ref: ${e(quoteRef)}</div>
+        </div>`:''}
+        ${payId?`<div style="background:#fff;border:1.5px solid #dde3ec;border-radius:10px;padding:14px;border-left:4px solid #f07020">
+          <div style="font-family:Barlow Condensed,sans-serif;font-size:10px;font-weight:800;color:#f07020;text-transform:uppercase;letter-spacing:1px;margin-bottom:8px">⚡ PayID — Instant</div>
+          <div style="font-size:15px;font-weight:800;color:#0e1f3d">${e(payId)}</div>
+          <div style="font-size:10px;color:#64748b;margin-top:6px">Instant payment via any bank app</div>
+        </div>`:''}
+        <div style="background:#fff;border:2px solid #635bff;border-left:5px solid #635bff;border-radius:10px;padding:18px;border-left:4px solid #635bff">
+          <div style="font-family:Barlow Condensed,sans-serif;font-size:13px;font-weight:800;color:#635bff;text-transform:uppercase;letter-spacing:1px;margin-bottom:8px">💳 Card Payment</div>
+          ${sUrl?`<div style="font-size:12px;color:#334155;margin-bottom:8px;font-weight:600">Pay instantly by card via the link below:</div>
+          <div style="background:#f5f3ff;border:1.5px solid #c4b5fd;border-radius:8px;padding:10px 14px;word-break:break-all;margin-bottom:10px">
+            <a href="${sUrl}" style="font-size:12px;color:#635bff;font-weight:700;text-decoration:none">${sUrl}</a>
+          </div>
+          <div style="font-size:10px;color:#94a3b8">Ref: ${e(quoteRef)} is pre-filled automatically</div>`:`<div style="font-size:12px;color:#64748b">Payment link available on request — contact us to pay by card.</div>`}
+        </div>
+      </div>
+      ${qrUrl?`<div style="flex-shrink:0;text-align:center">
+        <div style="background:#fff;border:2.5px solid #0e1f3d;border-radius:12px;padding:8px;display:inline-block">
+          <img src="${qrUrl}" width="110" height="110" style="display:block;border-radius:6px" alt="Scan to pay">
+        </div>
+        <div style="font-family:Barlow Condensed,sans-serif;font-size:9px;color:#64748b;margin-top:5px;font-weight:800;text-transform:uppercase;letter-spacing:0.8px">Scan to Pay<br>via Phone</div>
+      </div>`:''}
+    </div>
+  </div>
   ${(qd.exclusionsText||qd.termsText)?`<!-- EXCLUSIONS + TERMS -->
   <div style="display:grid;grid-template-columns:1fr 1fr;border-bottom:1px solid #d8dde6">
     ${qd.exclusionsText?`<div style="padding:16px 36px;border-right:1px solid #d8dde6"><span style="font-family:'Barlow Condensed',sans-serif;font-size:9px;font-weight:700;letter-spacing:.22em;text-transform:uppercase;color:#1e2d4e;border-bottom:2px solid #f5821f;padding-bottom:5px;display:inline-block;margin-bottom:8px">Exclusions</span><div style="font-size:12px;line-height:1.72;color:#6b7a94">${nl(qd.exclusionsText)}</div></div>`:''}
