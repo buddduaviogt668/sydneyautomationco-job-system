@@ -8463,24 +8463,52 @@ function openVisualQuote(jobId) {
       <textarea id="vqNotes" oninput="vqAr(this)" placeholder="Any additional notes for the client..."></textarea>
     </div>
 
-    <!-- PAYMENT -->
+    <!-- PAYMENT (mirrors invoice PDF How to Pay) -->
     <div class="vq-payment">
-      <span class="vq-col-label" style="display:block;margin-bottom:12px">Payment</span>
-      <div class="vq-pay-grid">
-        <div class="vq-pay-box">
-          <div class="vq-pay-title">■ Bank Transfer</div>
-          <textarea class="vq-pay-ta" id="vqPayBank" rows="4" oninput="vqAr(this)"></textarea>
-        </div>
-        <div class="vq-pay-box">
-          <div class="vq-pay-title">■ PayID (Instant)</div>
-          <textarea class="vq-pay-ta" id="vqPayID" rows="4" oninput="vqAr(this)"></textarea>
-        </div>
-        <div class="vq-pay-box">
-          <div class="vq-pay-title">■ Card Payment</div>
-          <textarea class="vq-pay-ta" id="vqPayCard" rows="4" oninput="vqAr(this)"></textarea>
-          <div id="vqCardFeeBox" style="font-size:12.5px;color:#6b7a94;margin-top:8px;line-height:1.5"></div>
-        </div>
-      </div>
+      ${(()=>{
+        const payId = CFG.bizPayID||'';
+        const bsb = CFG.bizBSB||'';
+        const acct = CFG.bizAccount||'';
+        const acctName = CFG.bizAccountName||CFG.bizName||'';
+        const qrData = payId ? `PayID:${payId}` : (bsb&&acct ? `BSB:${bsb.replace(/-/g,'')} ACCT:${acct} NAME:${acctName}` : '');
+        const qrUrl = qrData ? `https://api.qrserver.com/v1/create-qr-code/?size=120x120&data=${encodeURIComponent(qrData)}&color=0e1f3d` : '';
+        const sUrl = (CFG.stripePaymentLinkBase||'').trim();
+        return `<div style="border:1.5px solid #dde3ec;border-radius:10px;overflow:hidden">
+          <div style="background:#0e1f3d;padding:10px 16px;display:flex;align-items:center;gap:8px">
+            <span style="font-size:16px">💳</span>
+            <span style="font-family:'Barlow Condensed',sans-serif;font-size:14px;font-weight:800;color:#fff;text-transform:uppercase;letter-spacing:1px">How to Pay</span>
+            ${qrUrl?`<span style="margin-left:auto;font-size:10px;color:rgba(255,255,255,0.6);font-weight:600">Scan QR to pay via phone →</span>`:''}
+          </div>
+          <div style="padding:16px;display:flex;gap:20px;align-items:flex-start;background:#fff">
+            <div style="flex:1;display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:14px">
+              ${bsb||acct?`<div style="background:#f4f7fb;border-radius:8px;padding:12px;border-left:3px solid #0e1f3d">
+                <div style="font-size:10px;font-weight:800;color:#0e1f3d;text-transform:uppercase;letter-spacing:0.8px;margin-bottom:6px">🏦 Bank Transfer</div>
+                <div style="font-size:12px;color:#334155"><strong>Account:</strong> ${esc(acctName)}</div>
+                <div style="font-size:12px;color:#334155"><strong>BSB:</strong> ${esc(bsb)}</div>
+                <div style="font-size:12px;color:#334155;margin-bottom:6px"><strong>Acct:</strong> ${esc(acct)}</div>
+                <div style="font-size:10px;color:#f07020;font-weight:700">Ref: Use invoice number</div>
+              </div>`:''}
+              ${payId?`<div style="background:#f4f7fb;border-radius:8px;padding:12px;border-left:3px solid #f07020">
+                <div style="font-size:10px;font-weight:800;color:#f07020;text-transform:uppercase;letter-spacing:0.8px;margin-bottom:6px">⚡ PayID — Instant</div>
+                <div style="font-size:15px;font-weight:800;color:#0e1f3d">${esc(payId)}</div>
+                <div style="font-size:10px;color:#64748b;margin-top:6px">Instant payment via any bank app</div>
+              </div>`:''}
+              <div style="background:#f4f7fb;border-radius:8px;padding:12px;border-left:3px solid #635bff">
+                <div style="font-size:10px;font-weight:800;color:#635bff;text-transform:uppercase;letter-spacing:0.8px;margin-bottom:6px">💳 Card Payment</div>
+                ${sUrl?`<div style="font-size:12px;color:#334155;font-weight:600;word-break:break-all"><a href="${sUrl}" style="color:#635bff;text-decoration:none">${sUrl}</a></div>
+                   <div style="font-size:10px;color:#94a3b8;margin-top:4px">Pay by card instantly online</div>`:`<div style="font-size:12px;color:#334155">Available on request</div>
+                   <div style="font-size:10px;color:#94a3b8;margin-top:4px">Contact us to pay by card</div>`}
+              </div>
+            </div>
+            ${qrUrl?`<div style="text-align:center;flex-shrink:0">
+              <div style="background:#fff;border:2px solid #0e1f3d;border-radius:10px;padding:6px;display:inline-block">
+                <img src="${qrUrl}" width="100" height="100" style="display:block;border-radius:6px" alt="Scan to pay">
+              </div>
+              <div style="font-size:9px;color:#94a3b8;margin-top:4px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px">Scan to Pay<br>via Phone</div>
+            </div>`:''}
+          </div>
+        </div>`;
+      })()}
     </div>
 
     <!-- EXCLUSIONS + T&C -->
@@ -8716,19 +8744,7 @@ function openVisualQuote(jobId) {
     var n = g('vqNotes');
     if (n) html += '<div style="padding:16px 36px;background:#f7f8fa;border-bottom:1px solid #d8dde6"><div class="col-label">Additional Notes</div><div style="font-size:13px;line-height:1.65;margin-top:8px;white-space:pre-wrap">' + esc(n) + '</div></div>';
 
-    html += '<div style="padding:16px 36px;border-bottom:1px solid #d8dde6"><div class="col-label" style="display:block;margin-bottom:12px">Payment</div><div style="display:grid;grid-template-columns:repeat(3,1fr);gap:14px">';
-    ['vqPayBank','vqPayID','vqPayCard'].forEach(function(id) {
-      var v = g(id);
-      if (id === 'vqPayCard' && v) {
-        var cbox = document.getElementById('vqCardFeeBox');
-        if (cbox && cbox.innerText) v += '\n\n' + cbox.innerText;
-      }
-      if (v) {
-        var htmlV = esc(v).replace(/(https?:\/\/[^\s]+)/g, '<a href="$1" target="_blank" style="color:#f5821f;text-decoration:underline">$1</a>');
-        html += '<div style="border:1px solid #d8dde6;border-top:2px solid #f5821f;border-radius:3px;padding:12px 14px;background:#f7f8fa"><div style="white-space:pre-wrap;font-size:12px;color:#6b7a94;line-height:1.65">' + htmlV + '</div></div>';
-      }
-    });
-    html += '</div></div>';
+    html += docPayment();
 
     var ex = g('vqExclusions'), tc = g('vqTerms');
     if (ex || tc) {
