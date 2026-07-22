@@ -8470,14 +8470,14 @@ function openVisualQuote(jobId) {
         const bsb = CFG.bizBSB||'';
         const acct = CFG.bizAccount||'';
         const acctName = CFG.bizAccountName||CFG.bizName||'';
-        const qrData = payId ? `PayID:${payId}` : (bsb&&acct ? `BSB:${bsb.replace(/-/g,'')} ACCT:${acct} NAME:${acctName}` : '');
-        const qrUrl = qrData ? `https://api.qrserver.com/v1/create-qr-code/?size=120x120&data=${encodeURIComponent(qrData)}&color=0e1f3d` : '';
         const sUrl = (CFG.stripePaymentLinkBase||'').trim();
+        const qrData = sUrl ? sUrl : (payId ? `tel:${payId.replace(/[^0-9+]/g,'')}` : (bsb&&acct ? `BSB: ${bsb} | Acct: ${acct} | Name: ${acctName}` : ''));
+        const qrUrl = qrData ? `https://api.qrserver.com/v1/create-qr-code/?size=120x120&data=${encodeURIComponent(qrData)}&color=0e1f3d` : '';
         return `<div style="border:1.5px solid #dde3ec;border-radius:10px;overflow:hidden">
           <div style="background:#0e1f3d;padding:10px 16px;display:flex;align-items:center;gap:8px">
             <span style="font-size:16px">💳</span>
             <span style="font-family:'Barlow Condensed',sans-serif;font-size:14px;font-weight:800;color:#fff;text-transform:uppercase;letter-spacing:1px">How to Pay</span>
-            ${qrUrl?`<span style="margin-left:auto;font-size:10px;color:rgba(255,255,255,0.6);font-weight:600">Scan QR to pay via phone →</span>`:''}
+            ${qrUrl?`<span style="margin-left:auto;font-size:10px;color:rgba(255,255,255,0.6);font-weight:600">Scan to Pay</span>`:''}
           </div>
           <div style="padding:16px;display:flex;gap:20px;align-items:flex-start;background:#fff">
             <div style="flex:1;display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:14px">
@@ -14838,7 +14838,8 @@ function docPayment(){
   const acct = B.bizAccount||'';
   const acctName = B.bizAccountName||B.bizName||'';
   // Build QR code data string for bank transfer or PayID
-  const qrData = payId ? `PayID:${payId}` : (bsb&&acct ? `BSB:${bsb.replace(/-/g,'')} ACCT:${acct} NAME:${acctName}` : '');
+  const sUrl = (CFG.stripePaymentLinkBase||'').trim();
+  const qrData = sUrl ? sUrl : (payId ? `tel:${payId.replace(/[^0-9+]/g,'')}` : (bsb&&acct ? `BSB: ${bsb} | Acct: ${acct} | Name: ${acctName}` : ''));
   const qrUrl = qrData ? `https://api.qrserver.com/v1/create-qr-code/?size=110x110&data=${encodeURIComponent(qrData)}&color=0e1f3d` : '';
   return `<div style="border:1.5px solid #dde3ec;border-radius:10px;overflow:hidden;margin-bottom:20px">
     <div style="background:#0e1f3d;padding:10px 16px;display:flex;align-items:center;gap:8px">
@@ -14983,10 +14984,11 @@ function _printV3Quote(j, qd){
   const bsb = CFG.bizBSB||'';
   const acct = CFG.bizAccount||'';
   const acctName = CFG.bizAccountName||CFG.bizName||'';
-  const qrData = payId ? `PayID:${payId}` : (bsb&&acct ? `BSB:${bsb.replace(/-/g,'')} ACCT:${acct} NAME:${acctName}` : '');
-  const qrUrl = qrData ? `https://api.qrserver.com/v1/create-qr-code/?size=120x120&data=${encodeURIComponent(qrData)}&color=0e1f3d` : '';
   const quoteRef = qd.quoteRef || j.jobNumber;
   const sUrl = stripePayUrl(j.id);
+  const sBase = (CFG.stripePaymentLinkBase||'').trim();
+  const qrData = sBase ? sBase : (payId ? `tel:${payId.replace(/[^0-9+]/g,'')}` : (bsb&&acct ? `BSB: ${bsb} | Acct: ${acct} | Name: ${acctName}` : ''));
+  const qrUrl = qrData ? `https://api.qrserver.com/v1/create-qr-code/?size=120x120&data=${encodeURIComponent(qrData)}&color=0e1f3d` : '';
   const fmt$ = v => '$'+Number(v).toLocaleString('en-AU',{minimumFractionDigits:2,maximumFractionDigits:2});
 
   // Items HTML
@@ -18629,7 +18631,7 @@ function generateInvoicePDF(jobId){
   const payId = B.bizPayID||'';
   const bsb = B.bizBSB||'';
   const acct = B.bizAccount||'';
-  const qrData = payId ? `PayID:${payId}` : (bsb&&acct ? `BSB:${bsb.replace(/-/g,'')} ACCT:${acct} NAME:${B.bizAccountName||B.bizName}` : '');
+  const qrData = (CFG.stripePaymentLinkBase||'').trim() || (payId ? `tel:${payId.replace(/[^0-9+]/g,'')}` : (bsb&&acct ? `BSB: ${bsb} | Acct: ${acct} | Name: ${B.bizAccountName||B.bizName}` : ''));
   const qrUrl = qrData ? `https://api.qrserver.com/v1/create-qr-code/?size=120x120&data=${encodeURIComponent(qrData)}&color=0e1f3d` : '';
 
   const lineRowsHtml = lines.map((ln,i)=>`<tr style="background:${i%2?'#f4f7fb':'#fff'}">
