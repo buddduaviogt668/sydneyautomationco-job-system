@@ -4128,7 +4128,7 @@ function submitInlineQuote(){
   save();
   NQB={clientId:'',items:[],labour:[{id:'l1',desc:'Programming & Commissioning',hours:2,rate:CFG.labourRate}],callout:CFG.callout,km:CFG.defaultKm||0,tolls:CFG.defaultTolls||0,freightCost:0,freightCharge:0,freightNote:'',scope:'',partsMargin:null};
   window._nqb=false; window._nqbSearch=''; window._nqbBrand='all'; window._nqbCat='all'; window._pipelineFilter='active';
-  renderMain();
+  renderNav();renderMain();
   setTimeout(()=>openJobDetail(jobId),200);
 }
 
@@ -4711,7 +4711,7 @@ function submitJob(){
     });
     if(typeof logActivity==='function') logActivity(newJob.id,'🚗 Trip auto-logged: '+tripKm+'km return to '+site.addr);
   }
-  save();closeModal();renderMain();
+  save();closeModal();renderNav();renderMain();
 }
 
 // ─── JOB PIPELINE CARD ────────────────────────────────────────────────────────
@@ -9782,7 +9782,7 @@ function duplicateJob(jobId){
   save();
   showToast('Duplicated as ' + newJob.jobNumber, 'success');
   closeModal();
-  openJobDetail(newId);
+  renderNav();openJobDetail(newId);
 }
 
 // ─── QUICK INVOICE ──────────────────────────────────────────────────────────
@@ -9848,6 +9848,7 @@ function _qiCreate(printAfter){
   jobs.push(newJob);
   save();
   closeModal();
+  renderNav();
   showToast('Invoice ' + invNum + ' created — ' + fmt$(amount), 'success');
   if(printAfter) setTimeout(()=>printInvoiceDoc(newJob.id), 300);
   else openJobDetail(newJob.id);
@@ -14559,8 +14560,7 @@ function renderSettings(){
           }).join('')}
         </div>
 
-        ${getAIProvider()==='groq'?`
-        <div style="background:#0c2a0c;border:1px solid #166534;border-radius:8px;padding:10px 12px;margin-bottom:10px;font-size:12px;color:#4ade80">
+          <div style="background:#0c2a0c;border:1px solid #166534;border-radius:8px;padding:10px 12px;margin-bottom:10px;font-size:12px;color:#4ade80">
           ✓ Groq is free — 6,000 requests/day, 30/min. Get your free key at <a href="https://console.groq.com" target="_blank" style="color:#86efac">console.groq.com</a> → API Keys
         </div>`:''}
 
@@ -14583,6 +14583,75 @@ function renderSettings(){
       <button onclick="settingsSave()" style="background:#10b981;color:#fff;border:none;border-radius:8px;padding:11px 24px;font-size:14px;font-weight:700;cursor:pointer">✓ Save All Settings</button>
     </div>
   </div>`;
+}
+
+function buildDocLines(j){
+  console.log('buildDocLines called for:', j.jobNumber, 'Type:', j.type);
+  const lines = [];
+  // For Invoices (SAI), check for explicit invoiceDoc or invoiceLines first
+  if (j.type === 'SAI') {
+    console.log('Processing as SAI', j.invoiceDoc);
+    if (j.invoiceDoc && j.invoiceDoc.lines && j.invoiceDoc.lines.length) {
+      console.log('Using invoiceDoc lines', j.invoiceDoc.lines);
+      j.invoiceDoc.lines.forEach(l => {
+        const qty = l.qty !== undefined && l.qty !== null && l.qty !== '' ? l.qty : 1;
+        const unit = Number(l.unit) || 0;
+        const desc = l.desc || l.description || '';
+        lines.push({ desc, partNo: l.partNumber || l.partNo || '', qty, unit, amount: Number(qty) * unit });
+      });
+      return lines;
+    }
+    if (j.invoiceLines && j.invoiceLines.length) {
+      console.log('Using invoiceLines', j.invoiceLines);
+      j.invoiceLines.forEach(l => {
+        const qty = l.qty !== undefined && l.qty !== null && l.qty !== '' ? l.qty : 1;
+        const unit = Number(l.unit) || 0;
+        const desc = l.desc || l.description || '';
+        lines.push({ desc, partNo: l.partNumber || l.partNo || '', qty, unit, amount: Number(qty) * unit });
+      });
+      return lines;
+    }
+    console.log('SAI job but no invoice lines found, falling back to quote lines');
+  }
+
+  // New quoteDoc format (from Quotes tab editor)
+  if(j.quoteDoc && j.quoteDoc.lines && j.quoteDoc.lines.length){
+    j.quoteDoc.lines.forEach(l=>{
+      const qty = l.qty !== undefined && l.qty !== null && l.qty !== '' ? l.qty : 1;
+      const unit = Number(l.unit) || 0;
+      const desc = l.desc || l.description || '';
+      lines.push({desc,partNo:l.partNumber||l.partNo||'',qty,unit,amount:Number(qty)*unit});
+    });
+    return lines;
+  }
+  // Visual Quote format (j.quoteData)
+  if(j.quoteData && j.quoteData.items && j.quoteData.items.length){
+    j.quoteData.items.forEach(l=>{
+      const qty = l.qty !== undefined && l.qty !== null && l.qty !== '' ? l.qty : 1;
+      const unit = Number(l.unit) || 0;
+      const desc = l.desc || l.description || '';
+      lines.push({desc,partNo:l.partNumber||l.partNo||'',qty,unit,amount:Number(qty)*unit});
+    });
+    return lines;
+  }
+  // Legacy quoteLines format (from old quote builder)
+  if(j.quoteLines){
+    if(j.quoteLines.callout>0) lines.push({desc:'Callout Fee',partNo:'',qty:1,unit:j.quoteLines.callout,amount:j.quoteLines.callout});
+    if(j.quoteLines.items && j.quoteLines.items.length){
+      j.quoteLines.items.forEach(i=>lines.push({desc:i.description||i.desc||'',partNo:i.partNumber||'',qty:i.qty||1,unit:i.sellPrice||i.unit||0,amount:(i.qty||1)*(i.sellPrice||i.unit||0)}));
+    }
+    if(j.quoteLines.labour && j.quoteLines.labour.length){
+      j.quoteLines.labour.forEach(l=>lines.push({desc:l.desc?`Labour – ${l.desc} (${l.hours}hrs @ $${l.rate}/hr)`:'Labour',partNo:'',qty:1,unit:l.hours*l.rate,amount:l.hours*l.rate}));
+    }
+    if(Number(j.quoteLines.freightCharge)>0){
+      lines.push({desc:`Freight & Courier${j.quoteLines.freightNote?' – '+j.quoteLines.freightNote:''}`,partNo:'',qty:1,unit:Number(j.quoteLines.freightCharge),amount:Number(j.quoteLines.freightCharge)});
+    }
+    return lines;
+  }
+  // Fallback: single line from scope + total
+  const fallbackAmt = j.type === 'SAI' ? (Number(j.invoiceAmount) || Number(j.quoteAmount) || 0) : (Number(j.quoteAmount) || 0);
+  lines.push({desc:j.scope||j.description||'Works as agreed',partNo:'',qty:1,unit:fallbackAmt,amount:fallbackAmt});
+  return lines;
 }
 
 function settingsSave(){
@@ -15168,7 +15237,7 @@ function printQuoteDoc(jobId){
   const c = gc(j.clientId)||{};
   const lines = buildDocLines(j);
   const total = lines.reduce((s,l)=>s+l.amount,0) || Number(j.quoteAmount)||0;
-  const hasLines = lines.length > 0 && lines.some(l=>l.amount>0);
+  const hasLines = lines.length > 0;
   const issued = j.createdAt||today();
   const validUntil = new Date(new Date(issued+'T00:00:00').getTime()+(CFG.quoteValidDays||30)*86400000).toLocaleDateString('en-AU');
   const depPct  = effectiveDepositPct(j);
@@ -17211,7 +17280,7 @@ const AI_ACTIONS = {
       const j = { id:jid, type:a.type||'SAQ', clientId:cid, status:a.status||'lead', jobNumber:jnum, scope:a.scope||'', notes:'', quoteAmount:String(a.amount||0), invoiceAmount:'', createdAt:today(), paidDate:'', invoiceDue:'', invoiceLines:[], quoteDoc:null };
       jobs.push(j);
       const c = STORE.get('counters')||{}; c.job = seq + 1; STORE.set('counters',c);
-      save(); return { jobNumber:jnum, id:jid, clientId:cid, message:'Created '+jnum };
+      save(); renderNav(); return { jobNumber:jnum, id:jid, clientId:cid, message:'Created '+jnum };
     }
   },
   updateJob: {
@@ -19979,7 +20048,7 @@ function createRecurringJob(i){
   recurringJobs[i].nextDue = advanceNextDue(r);
   save();
   saveRecurring();
-  renderMain();
+  renderNav();renderMain();
   showToast('Job created from schedule — next due updated to '+fmtD(recurringJobs[i].nextDue),'success');
 }
 function createRecurringJobs(){
