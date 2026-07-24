@@ -18349,6 +18349,7 @@ function openInvoiceLineEditor(jobId){
     const diffWarn = diff > 0.01 ? `<div style="background:#fff8f4;border:1.5px solid #f07020;border-radius:8px;padding:10px 14px;font-size:12px;color:#c2400a;margin-bottom:12px">
       ⚠ Line items total <strong>$${lineTotal.toFixed(2)}</strong> but invoice amount is <strong>$${invAmt.toFixed(2)}</strong>. Adjust lines or update invoice amount in the job (difference: $${diff.toFixed(2)}).
     </div>` : '';
+    const _ptv = hf().payTermsDays!==undefined&&hf().payTermsDays!==null ? hf().payTermsDays : payTermsDays(CFG.invoicePaymentTerms||CFG.bizPaymentTerms,7);
     return `
     <div style="background:#fff;border-radius:16px;width:100%;max-width:860px;box-shadow:0 32px 80px rgba(0,0,0,0.5);margin:auto;font-family:'DM Sans',sans-serif">
       <!-- Modal Header -->
@@ -18374,11 +18375,11 @@ function openInvoiceLineEditor(jobId){
             <div>${lbl('Issue Date')}<input id="ilhf-issued" type="date" value="${hf().issueDate}" oninput="window._ilRecalcDue()" style="${iS}"></div>
             <div>${lbl('Payment Terms')}
               <select id="ilhf-pterms" onchange="window._ilRecalcDue()" style="${iS};cursor:pointer">
-                <option value="0" ${payTermsDays(CFG.invoicePaymentTerms||CFG.bizPaymentTerms,7)===0?'selected':''}>Due on Invoice</option>
-                <option value="7" ${payTermsDays(CFG.invoicePaymentTerms||CFG.bizPaymentTerms,7)===7?'selected':''}>7 days</option>
-                <option value="14" ${payTermsDays(CFG.invoicePaymentTerms||CFG.bizPaymentTerms,7)===14?'selected':''}>14 days</option>
-                <option value="21" ${payTermsDays(CFG.invoicePaymentTerms||CFG.bizPaymentTerms,7)===21?'selected':''}>21 days</option>
-                <option value="30" ${payTermsDays(CFG.invoicePaymentTerms||CFG.bizPaymentTerms,7)===30?'selected':''}>30 days</option>
+                <option value="0" ${_ptv===0?'selected':''}>Due on Invoice</option>
+                <option value="7" ${_ptv===7?'selected':''}>7 days</option>
+                <option value="14" ${_ptv===14?'selected':''}>14 days</option>
+                <option value="21" ${_ptv===21?'selected':''}>21 days</option>
+                <option value="30" ${_ptv===30?'selected':''}>30 days</option>
               </select>
             </div>
             <div>${lbl('Due Date')}<input id="ilhf-due" type="date" value="${hf().dueDate}" style="${iS}"></div>
