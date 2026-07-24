@@ -18706,7 +18706,7 @@ function generateInvoicePDF(jobId){
         ['Job Ref', j.jobNumber],
         hf.poNumber?['PO / Auth Ref', hf.poNumber]:null,
         j.scheduledDate?['Site Date', fmtD(j.scheduledDate)]:null,
-        ['Payment Terms', fmtPayTerms(B.invoicePaymentTerms||B.bizPaymentTerms)],
+        ['Payment Terms', resolvedTermsLabel],
         j.supplierRef?['Supplier Ref', j.supplierRef]:null,
       ].filter(Boolean).map(([k,v])=>`<div style="display:flex;justify-content:space-between;margin-bottom:7px;padding-bottom:7px;border-bottom:1px solid #f1f5f9">
         <span style="font-size:12px;color:#64748b;font-weight:600">${k}</span>
