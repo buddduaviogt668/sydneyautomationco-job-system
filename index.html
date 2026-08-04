@@ -4734,6 +4734,7 @@ function renderJobPipelineCard(j){
       {s:'quoted',       label:'Quoted'},
       {s:'deposit_due',  label:'Deposit Due'},
       {s:'deposit_paid', label:'Deposit Paid'},
+      {s:'parts_ordered',label:'Parts Ordered'},
       {s:'scheduled',    label:'Scheduled'},
       {s:'invoiced',     label:'Balance Invoice'},
       {s:'paid',         label:'Paid ✓'}
@@ -4749,7 +4750,10 @@ function renderJobPipelineCard(j){
   }
 
   const currentIdx = pipeline.findIndex(p => p.s === status);
-  const effectiveIdx = currentIdx === -1 ? 0 : currentIdx;
+  let effectiveIdx = currentIdx === -1 ? 0 : currentIdx;
+  // Approved-with-deposit sits between approval and the deposit being collected —
+  // highlight "Deposit Due" as the current step until the deposit status is reached.
+  if(hasDeposit && status==='approved') effectiveIdx = Math.max(0, pipeline.findIndex(p=>p.s==='deposit_due'));
 
   // Progress track
   const stepCount = pipeline.length;
@@ -4780,6 +4784,11 @@ function renderJobPipelineCard(j){
   const intlPhone = phone.startsWith('0') ? '61'+phone.substring(1) : phone;
   const site      = siteForClient(j.clientId);
 
+  // Persistent "deposit received" badge for jobs past the deposit_paid stage
+  const depBadge = (Number(j.depositAmount) > 0 && j.depositDate)
+    ? `<div style="margin-top:8px;display:inline-flex;align-items:center;gap:6px;background:#f5f3ff;border:1px solid #ddd6fe;border-radius:8px;padding:6px 10px;font-size:12px;font-weight:700;color:#5b21b6">💳 Deposit received — ${fmt$(j.depositAmount)}${j.depositDate ? ' on '+fmtD(j.depositDate) : ''}</div>`
+    : '';
+
   let cardBg = '#f8fafc', cardBorder = '#e2e8f0', heading = '', body = '', primaryBtn = '', secondaryBtns = '';
 
   if(status === 'paid'){
@@ -4792,7 +4801,7 @@ function renderJobPipelineCard(j){
     cardBg = '#fff1f2'; cardBorder = '#fecdd3';
     const daysOd = daysOverdue(j);
     heading = `⚠ Payment overdue — ${daysOd} day${daysOd!==1?'s':''} past due`;
-    body = `<span style="color:#be123c">$${invAmt.toFixed(2)} was due ${fmtD(j.invoiceDue)}. Chase this now.</span>`;
+    body = `<span style="color:#be123c">$${invAmt.toFixed(2)} was due ${fmtD(j.invoiceDue)}. Chase this now.</span>${depBadge}`;
     primaryBtn = `<button onclick="advanceStatus('${j.id}','paid')" style="background:#10b981;color:#fff;border:none;border-radius:8px;padding:10px 18px;font-size:13px;font-weight:700;cursor:pointer">✓ Mark Paid</button>`;
     if(phone) secondaryBtns += `<button onclick="sendWhatsApp('${j.id}','chase')" style="background:#f97316;color:#fff;border:none;border-radius:8px;padding:10px 16px;font-size:13px;font-weight:700;cursor:pointer">💬 Chase via WhatsApp</button>`;
     secondaryBtns += `<button onclick="openInvoiceLineEditor('${j.id}')" style="background:#fff;border:1px solid #e2e8f0;border-radius:8px;padding:10px 16px;font-size:13px;font-weight:600;cursor:pointer;color:#334155">📄 Resend Invoice</button>`;
@@ -4800,7 +4809,7 @@ function renderJobPipelineCard(j){
   } else if(status === 'invoiced'){
     cardBg = '#fff7ed'; cardBorder = '#fed7aa';
     heading = 'Invoice sent — waiting for payment';
-    body = `<span style="color:#9a3412">$${invAmt.toFixed(2)} due${j.invoiceDue ? ' by '+fmtD(j.invoiceDue) : ''}.</span>`;
+    body = `<span style="color:#9a3412">$${invAmt.toFixed(2)} due${j.invoiceDue ? ' by '+fmtD(j.invoiceDue) : ''}.</span>${depBadge}`;
     primaryBtn = `<button onclick="advanceStatus('${j.id}','paid')" style="background:#10b981;color:#fff;border:none;border-radius:8px;padding:10px 18px;font-size:13px;font-weight:700;cursor:pointer">✓ Payment Received — Mark Paid</button>`;
     secondaryBtns += `<button onclick="openInvoiceLineEditor('${j.id}')" style="background:#fff;border:1px solid #e2e8f0;border-radius:8px;padding:10px 16px;font-size:13px;font-weight:600;cursor:pointer;color:#334155">📄 Invoice PDF</button>`;
     if(phone) secondaryBtns += `<button onclick="sendWhatsApp('${j.id}','chase')" style="background:#fff;border:1px solid #e2e8f0;border-radius:8px;padding:10px 16px;font-size:13px;font-weight:600;cursor:pointer;color:#334155">💬 Chase</button>`;
@@ -4808,7 +4817,7 @@ function renderJobPipelineCard(j){
   } else if(status === 'scheduled'){
     cardBg = '#eff6ff'; cardBorder = '#bfdbfe';
     heading = `Job scheduled${j.scheduledDate ? ' for '+fmtD(j.scheduledDate) : ''}`;
-    body = `<span style="color:#1d4ed8">When the work is done, raise your invoice.</span>`;
+    body = `<span style="color:#1d4ed8">When the work is done, raise your invoice.</span>${depBadge}`;
     primaryBtn = `<button onclick="advanceStatus('${j.id}','invoiced')" style="background:#1e3a5f;color:#fff;border:none;border-radius:8px;padding:10px 18px;font-size:13px;font-weight:700;cursor:pointer">✓ Work Complete — Raise Invoice</button>`;
     if(site.addr) secondaryBtns += `<a href="${mapsUrl(HOME_ADDRESS,site.addr)}" target="_blank" style="background:#fff;border:1px solid #e2e8f0;border-radius:8px;padding:10px 16px;font-size:13px;font-weight:600;cursor:pointer;color:#334155;text-decoration:none">🗺 Directions</a>`;
     if(phone) secondaryBtns += `<a href="tel:${intlPhone}" style="background:#fff;border:1px solid #e2e8f0;border-radius:8px;padding:10px 16px;font-size:13px;font-weight:600;cursor:pointer;color:#334155;text-decoration:none">📞 Call Client</a>`;
@@ -4816,7 +4825,7 @@ function renderJobPipelineCard(j){
   } else if(status === 'parts_ordered'){
     cardBg = '#eef2ff'; cardBorder = '#c7d2fe';
     heading = 'Parts ordered — schedule when ready';
-    body = `<span style="color:#4338ca">Parts on order since ${j.partsOrderDate ? fmtD(j.partsOrderDate) : 'recently'}. Set a date and schedule the install.</span>`;
+    body = `<span style="color:#4338ca">Parts on order since ${j.partsOrderDate ? fmtD(j.partsOrderDate) : 'recently'}. Set a date and schedule the install.</span>${depBadge}`;
     primaryBtn = `<button onclick="advanceStatus('${j.id}','scheduled')" style="background:#1e3a5f;color:#fff;border:none;border-radius:8px;padding:10px 18px;font-size:13px;font-weight:700;cursor:pointer">📅 Schedule Install</button>`;
 
   } else if(status === 'deposit_paid'){
