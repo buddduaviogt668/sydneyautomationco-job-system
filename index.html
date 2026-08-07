@@ -1953,8 +1953,35 @@ function daysOverdue(j){
 function daysSince(d){ return d?Math.floor((new Date(today())-new Date(d))/(1000*60*60*24)):0; }
 // Safely extract numeric days from payment terms (handles "7", "7 days", "Standard (7 days)", "14 days", etc.)
 function payTermsDays(terms, fallback){ if(terms===null||terms===undefined) return fallback||14; const n=parseInt(String(terms).replace(/[^\d]/g,' ').trim()); return isNaN(n)?fallback||14:n; }
-// Format payment terms for display — always returns e.g. "7 days" without doubling "days days"
-function fmtPayTerms(terms){ const n=payTermsDays(terms,null); return n?n+' days':(terms||'7 days'); }
+// True when payment terms are an End-Of-Month arrangement (e.g. "30 days end of month")
+function termsEOM(terms){ if(terms===null||terms===undefined) return false; return /eom|end of month/i.test(String(terms)); }
+// Local-timezone-safe YYYY-MM-DD (avoids UTC date-shift on .toISOString())
+function _isoDate(d){ return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); }
+// Resolve a due date from an issue date + payment terms.
+// Numeric terms: issue date + N days. "30 days end of month": last day of the month AFTER the invoice month.
+// 0 = due on invoice (returns the issue date itself).
+function resolveDueDate(issueDate, terms){
+  if(!issueDate) return '';
+  if(termsEOM(terms)){
+    const d = new Date(issueDate+'T00:00:00');
+    return _isoDate(new Date(d.getFullYear(), d.getMonth()+2, 0));
+  }
+  const days = payTermsDays(terms, 0);
+  if(days===0) return issueDate;
+  const d = new Date(issueDate+'T00:00:00');
+  d.setDate(d.getDate()+days);
+  return _isoDate(d);
+}
+// Short label for payment terms: "7 days", "30 days", "30 days end of month", "Due on Invoice"
+function termsLabel(terms){
+  if(terms===null||terms===undefined) return '';
+  if(termsEOM(terms)) return (payTermsDays(terms,30))+' days end of month';
+  const n = payTermsDays(terms, null);
+  if(n===0) return 'Due on Invoice';
+  return n ? n+' days' : String(terms);
+}
+// Format payment terms for display - always returns e.g. "7 days" without doubling "days days"
+function fmtPayTerms(terms){ return termsLabel(terms) || terms || '7 days'; }
 
 const badge = (m) => `<span style="color:${m.color};background:${m.bg};padding:4px 10px;border-radius:12px;font-size:11px;font-weight:700;letter-spacing:0.3px;white-space:nowrap;box-shadow:var(--shadow-sm)">${m.label}</span>`;
 const field = (label,html,req='',half=false) => `<div style="margin-bottom:16px;width:${half?'calc(50% - 8px)':'100%'}"><label style="display:block;font-size:12px;font-weight:700;color:var(--text-secondary);margin-bottom:6px;text-transform:uppercase;letter-spacing:0.5px">${label}${req?'<span style="color:var(--brand-danger);margin-left:4px">*</span>':''}</label>${html}</div>`;
@@ -4329,7 +4356,7 @@ function renderNewClient(prefill){
 
       <div>${lbl('Payment Terms')}
         <select id="nc-payterms" style="${iS};appearance:none;cursor:pointer">
-          ${['Standard (7 days)','14 days','30 days','COD','Prepaid','As agreed'].map(t=>`<option value="${t}"${(p.paymentTerms||'Standard (7 days)')===t?' selected':''}>${t}</option>`).join('')}
+          ${['Standard (7 days)','14 days','30 days','30 days end of month','COD','Prepaid','As agreed'].map(t=>`<option value="${t}"${(p.paymentTerms||'Standard (7 days)')===t?' selected':''}>${t}</option>`).join('')}
         </select></div>
 
       <div style="grid-column:1/-1">${lbl('Site Access Notes')}
@@ -4842,6 +4869,7 @@ function renderJobPipelineCard(j){
     if(phone) primaryBtn = `<button onclick="sendWhatsApp('${j.id}','confirm')" style="background:#25d366;color:#fff;border:none;border-radius:8px;padding:10px 18px;font-size:13px;font-weight:700;cursor:pointer">💬 Send Deposit Request</button>`;
     secondaryBtns += `<button onclick="sendDepositInvoiceEmail('${j.id}')" style="background:#fff;border:1px solid #e2e8f0;border-radius:8px;padding:10px 16px;font-size:13px;font-weight:700;cursor:pointer;color:#5b21b6">💳 Send Deposit Invoice</button>`;
     secondaryBtns += `<button onclick="printDepositInvoiceDoc('${j.id}')" style="background:#fff;border:1px solid #e2e8f0;border-radius:8px;padding:10px 16px;font-size:13px;font-weight:600;cursor:pointer;color:#334155">📄 Deposit Invoice PDF</button>`;
+    secondaryBtns += `<button onclick="openDepositInvoiceEditor('${j.id}')" style="background:#fff;border:1px solid #e2e8f0;border-radius:8px;padding:10px 16px;font-size:13px;font-weight:600;cursor:pointer;color:#334155">✏ Edit Deposit Invoice</button>`;
     secondaryBtns += `<button onclick="advanceStatus('${j.id}','deposit_paid')" style="background:#1e3a5f;color:#fff;border:none;border-radius:8px;padding:10px 16px;font-size:13px;font-weight:700;cursor:pointer">✓ Deposit Received</button>`;
 
   } else if(status === 'approved'){
@@ -5078,6 +5106,7 @@ function renderJobDetail(id){
       <button onclick="sendInvoiceEmail('${j.id}')" style="display:flex;align-items:center;gap:5px;background:#635bff;color:#fff;border:none;border-radius:8px;padding:9px 13px;font-size:12px;font-weight:600;cursor:pointer">💳 Send Invoice Email</button>
       ${hasDeposit?`<button onclick="sendDepositInvoiceEmail('${j.id}')" style="display:flex;align-items:center;gap:5px;background:#f5f3ff;color:#5b21b6;border:1px solid #ddd6fe;border-radius:8px;padding:9px 13px;font-size:12px;font-weight:700;cursor:pointer">💳 Send Deposit Invoice</button>`:''}
       ${hasDeposit?`<button onclick="printDepositInvoiceDoc('${j.id}')" style="display:flex;align-items:center;gap:5px;background:#f5f3ff;color:#5b21b6;border:1px solid #ddd6fe;border-radius:8px;padding:9px 13px;font-size:12px;font-weight:700;cursor:pointer">⊞ Deposit Invoice PDF</button>`:''}
+      ${hasDeposit?`<button onclick="openDepositInvoiceEditor('${j.id}')" style="display:flex;align-items:center;gap:5px;background:#f5f3ff;color:#5b21b6;border:1px solid #ddd6fe;border-radius:8px;padding:9px 13px;font-size:12px;font-weight:700;cursor:pointer">✏ Edit Deposit Invoice</button>`:''}
       ${j.type==='SAQ'?`<button onclick="convertQuoteToInvoice('${j.id}')" style="display:flex;align-items:center;gap:5px;background:#f59e0b;color:#0f172a;border:none;border-radius:8px;padding:9px 13px;font-size:12px;font-weight:700;cursor:pointer">⚡ Convert to Invoice</button>`:''}
       <button onclick="duplicateJob('${j.id}')" style="display:flex;align-items:center;gap:5px;background:#f1f5f9;border:1px solid #e2e8f0;border-radius:8px;padding:9px 13px;font-size:12px;font-weight:600;color:#334155;cursor:pointer">⊕ Duplicate Job</button>
       <button onclick="openModal('email','${j.id}')" style="display:flex;align-items:center;gap:5px;background:#f1f5f9;border:1px solid #e2e8f0;border-radius:8px;padding:9px 13px;font-size:12px;font-weight:600;color:#334155">✉ Email</button>
@@ -5735,7 +5764,7 @@ function renderClientDetail(id){
         </select></div>
       <div>${lbl('Payment Terms')}
         <select id="cd-payterms" style="${iS};appearance:none;cursor:pointer">
-          ${['Standard (7 days)','14 days','30 days','COD','Prepaid','As agreed'].map(t=>`<option value="${t}"${(c.paymentTerms||'Standard (7 days)')===t?' selected':''}>${t}</option>`).join('')}
+          ${['Standard (7 days)','14 days','30 days','30 days end of month','COD','Prepaid','As agreed'].map(t=>`<option value="${t}"${(c.paymentTerms||'Standard (7 days)')===t?' selected':''}>${t}</option>`).join('')}
         </select></div>
       <div>${lbl('Deposit Required')}
         <select id="cd-depositpct" style="${iS};appearance:none;cursor:pointer;font-weight:700">
@@ -15209,6 +15238,7 @@ function printQuoteDoc(jobId){
   d.write('<option value="14">14 days</option>');
   d.write('<option value="21">21 days</option>');
   d.write('<option value="30">30 days</option>');
+  d.write('<option value="30eom">30 days end of month</option>');
   d.write('</select>');
   d.write('<div style="margin-left:auto;display:flex;gap:8px">');
   d.write('<button onclick="window.print()" style="background:#0e1f3d;color:#fff;border:none;border-radius:6px;padding:9px 20px;font-size:13px;font-weight:700;cursor:pointer;font-family:Barlow,sans-serif">⊡ Print / Save PDF</button>');
@@ -15275,8 +15305,8 @@ function printQuoteDoc(jobId){
   // Live payment terms updater
   d.write('<scri'+'pt>');
   d.write('document.getElementById("qpts").onchange=function(){');
-  d.write('  var days=parseInt(this.value);');
-  d.write('  var lbl=days===0?"Due on Invoice":days+" days";');
+  d.write('  var v=this.value;');
+  d.write('  var lbl=v==="30eom"?"30 days end of month":(v==="0"?"Due on Invoice":v+" days");');
   d.write('  var el=document.getElementById("q-pt-display");if(el)el.textContent=lbl;');
   d.write('  var tc=document.getElementById("inv-terms-pt");if(tc)tc.textContent=lbl;');
   d.write('};');
@@ -18370,7 +18400,8 @@ function openInvoiceLineEditor(jobId){
     const diffWarn = diff > 0.01 ? `<div style="background:#fff8f4;border:1.5px solid #f07020;border-radius:8px;padding:10px 14px;font-size:12px;color:#c2400a;margin-bottom:12px">
       ⚠ Line items total <strong>$${lineTotal.toFixed(2)}</strong> but invoice amount is <strong>$${invAmt.toFixed(2)}</strong>. Adjust lines or update invoice amount in the job (difference: $${diff.toFixed(2)}).
     </div>` : '';
-    const _ptv = hf().payTermsDays!==undefined&&hf().payTermsDays!==null ? hf().payTermsDays : payTermsDays(CFG.invoicePaymentTerms||CFG.bizPaymentTerms,7);
+    const _ptEom = hf().payTermsEom != null ? hf().payTermsEom : (termsEOM(CFG.invoicePaymentTerms)||termsEOM(CFG.bizPaymentTerms));
+    const _ptv = _ptEom ? '30eom' : ((hf().payTermsDays!==undefined&&hf().payTermsDays!==null) ? hf().payTermsDays : payTermsDays(CFG.invoicePaymentTerms||CFG.bizPaymentTerms,7));
     return `
     <div style="background:#fff;border-radius:16px;width:100%;max-width:860px;box-shadow:0 32px 80px rgba(0,0,0,0.5);margin:auto;font-family:'DM Sans',sans-serif">
       <!-- Modal Header -->
@@ -18401,6 +18432,7 @@ function openInvoiceLineEditor(jobId){
                 <option value="14" ${_ptv===14?'selected':''}>14 days</option>
                 <option value="21" ${_ptv===21?'selected':''}>21 days</option>
                 <option value="30" ${_ptv===30?'selected':''}>30 days</option>
+                <option value="30eom" ${_ptv==='30eom'?'selected':''}>30 days end of month</option>
               </select>
             </div>
             <div>${lbl('Due Date')}<input id="ilhf-due" type="date" value="${hf().dueDate}" style="${iS}"></div>
@@ -18537,7 +18569,7 @@ function openInvoiceLineEditor(jobId){
     hf.issueDate = document.getElementById('ilhf-issued')?.value||hf.issueDate;
     hf.dueDate = document.getElementById('ilhf-due')?.value||hf.dueDate;
     const ptermsEl = document.getElementById('ilhf-pterms');
-    if(ptermsEl) hf.payTermsDays = parseInt(ptermsEl.value);
+    if(ptermsEl){ hf.payTermsDays = parseInt(ptermsEl.value); hf.payTermsEom = termsEOM(ptermsEl.value); }
     hf.poNumber = document.getElementById('ilhf-po')?.value||'';
     hf.clientCompany = document.getElementById('ilhf-co')?.value||hf.clientCompany;
     hf.clientContact = document.getElementById('ilhf-contact')?.value||'';
@@ -18551,16 +18583,14 @@ function openInvoiceLineEditor(jobId){
 
   window._ilRecalcDue = function(){
     const issued = document.getElementById('ilhf-issued')?.value;
-    const days = parseInt(document.getElementById('ilhf-pterms')?.value||'0');
+    const ptv = document.getElementById('ilhf-pterms')?.value||'0';
     if(!issued) return;
-    const d = new Date(issued+'T00:00:00');
-    d.setDate(d.getDate() + days);
     const dueEl = document.getElementById('ilhf-due');
-    if(dueEl) dueEl.value = days===0 ? issued : d.toISOString().split('T')[0];
+    if(dueEl) dueEl.value = resolveDueDate(issued, ptv);
     // Also update the terms textarea so what you see = what gets saved
     const termsEl = document.getElementById('ilhf-terms');
     if(termsEl){
-      const lbl = days===0 ? 'Due on Invoice' : days+' days';
+      const lbl = ptv==='0' ? 'Due on Invoice' : (ptv==='30eom' ? '30 days end of month' : ptv+' days');
       termsEl.value = termsEl.value.replace(/Payment is due within [^.]+( of invoice date\.)/,'Payment is due within '+lbl+'$1');
     }
   };
@@ -18635,20 +18665,24 @@ function generateInvoicePDF(jobId, mode){
   if(!j){ showToast('Job not found','error'); return; }
   const B = CFG;
   const hf = j.invoiceHeaderFields || {};
-  const invNum = isDeposit ? (j.invoiceNumber||j.jobNumber)+' DEPOSIT' : (hf.invoiceNumber || j.invoiceNumber || j.jobNumber);
-  const issueDate = hf.issueDate ? new Date(hf.issueDate+'T00:00:00').toLocaleDateString('en-AU',{day:'2-digit',month:'long',year:'numeric'}) : new Date().toLocaleDateString('en-AU',{day:'2-digit',month:'long',year:'numeric'});
-  const dueDate = hf.dueDate ? new Date(hf.dueDate+'T00:00:00').toLocaleDateString('en-AU',{day:'2-digit',month:'long',year:'numeric'}) : '';
-  // Use the terms the user selected in the line editor — hf.payTermsDays is saved by syncHeaderFields
+  const dh = isDeposit ? (j.depositHeader || depositHeaderDefaults(j)) : null;
+  const f = isDeposit ? dh : hf;
+  const invNum = isDeposit ? (dh.invoiceNumber || (j.invoiceNumber||j.jobNumber)+' DEPOSIT') : (hf.invoiceNumber || j.invoiceNumber || j.jobNumber);
+  const issueDate = f.issueDate ? new Date(f.issueDate+'T00:00:00').toLocaleDateString('en-AU',{day:'2-digit',month:'long',year:'numeric'}) : new Date().toLocaleDateString('en-AU',{day:'2-digit',month:'long',year:'numeric'});
+  const dueDate = f.dueDate ? new Date(f.dueDate+'T00:00:00').toLocaleDateString('en-AU',{day:'2-digit',month:'long',year:'numeric'}) : '';
+  // Use the terms the user selected in the line editor — payTermsDays/payTermsEom are saved by syncHeaderFields
   // Falls back to CFG only if the editor was never opened
-  const resolvedTermDays = (hf.payTermsDays !== undefined && hf.payTermsDays !== null) ? hf.payTermsDays : payTermsDays(B.invoicePaymentTerms||B.bizPaymentTerms,7);
-  const resolvedTermsLabel = resolvedTermDays === 0 ? 'Due on Invoice' : resolvedTermDays + ' days';
+  const _hEom = f.payTermsEom != null ? f.payTermsEom : (termsEOM(B.invoicePaymentTerms)||termsEOM(B.bizPaymentTerms));
+  const resolvedTermDays = (f.payTermsDays !== undefined && f.payTermsDays !== null) ? f.payTermsDays : payTermsDays(B.invoicePaymentTerms||B.bizPaymentTerms,7);
+  const resolvedTermsLabel = _hEom ? '30 days end of month' : (resolvedTermDays === 0 ? 'Due on Invoice' : resolvedTermDays + ' days');
+  const _termsDefault = (_hEom ? 'Payment due by the end of the month following the invoice date.' : (resolvedTermDays===0 ? 'Payment due on invoice date.' : 'Payment is due within '+resolvedTermsLabel+' of invoice date.')) + ' This business is registered for GST. This is a tax invoice for GST purposes.';
   const isPaid = isDeposit ? (Number(j.depositAmount)>0 && !!j.depositDate) : j.status==='paid';
-  const depAmt = isDeposit ? (Number(j.depositAmount)>0 ? Number(j.depositAmount) : Number(j.quoteAmount||0)*effectiveDepositPct(j)/100) : 0;
+  const depAmt = isDeposit ? (Number(dh.depositAmount)||depositAmountFor(j)) : 0;
   const invAmt = isDeposit ? depAmt : Number(j.invoiceAmount||j.quoteAmount||0);
 
   // Build line items
   const lines = isDeposit
-    ? [{desc:'Deposit '+(effectiveDepositPct(j))+'% — '+(hf.scopeText||j.scope||'Works as agreed'), qty:1, unit:depAmt, amount:depAmt}]
+    ? [{desc:dh.depositDesc||'Deposit '+(effectiveDepositPct(j))+'% — '+(dh.scopeText||j.scope||'Works as agreed'), qty:1, unit:depAmt, amount:depAmt}]
     : ((j.invoiceLines && j.invoiceLines.length)
         ? j.invoiceLines
         : [{desc:hf.scopeText||j.scope||'Works as agreed', qty:1, unit:invAmt, amount:invAmt}]);
@@ -18726,18 +18760,18 @@ function generateInvoicePDF(jobId, mode){
   <div style="display:grid;grid-template-columns:1fr 1fr;gap:0;padding:0">
     <div style="padding:24px 28px;border-right:1px solid #e8edf5;border-bottom:1px solid #e8edf5">
       <div style="font-family:Barlow Condensed,sans-serif;font-size:10px;font-weight:800;color:#5a6a80;text-transform:uppercase;letter-spacing:1.5px;margin-bottom:10px">Bill To</div>
-      <div style="font-size:17px;font-weight:800;color:#0e1f3d">${esc(hf.clientCompany||'')}</div>
-      ${hf.clientContact?`<div style="font-size:13px;color:#334155;margin-top:3px">${esc(hf.clientContact)}</div>`:''}
-      ${hf.clientAddress?`<div style="font-size:12px;color:#64748b;margin-top:6px">${esc(hf.clientAddress)}</div>`:''}
-      ${hf.clientPhone?`<div style="font-size:12px;color:#64748b">P: ${esc(hf.clientPhone)}</div>`:''}
-      ${hf.clientEmail?`<div style="font-size:12px;color:#64748b">${esc(hf.clientEmail)}</div>`:''}
-      ${hf.clientABN?`<div style="font-size:11px;color:#94a3b8;margin-top:6px">ABN: ${esc(hf.clientABN)}</div>`:''}
+      <div style="font-size:17px;font-weight:800;color:#0e1f3d">${esc(f.clientCompany||'')}</div>
+      ${f.clientContact?`<div style="font-size:13px;color:#334155;margin-top:3px">${esc(f.clientContact)}</div>`:''}
+      ${f.clientAddress?`<div style="font-size:12px;color:#64748b;margin-top:6px">${esc(f.clientAddress)}</div>`:''}
+      ${f.clientPhone?`<div style="font-size:12px;color:#64748b">P: ${esc(f.clientPhone)}</div>`:''}
+      ${f.clientEmail?`<div style="font-size:12px;color:#64748b">${esc(f.clientEmail)}</div>`:''}
+      ${f.clientABN?`<div style="font-size:11px;color:#94a3b8;margin-top:6px">ABN: ${esc(f.clientABN)}</div>`:''}
     </div>
     <div style="padding:24px 28px;border-bottom:1px solid #e8edf5">
       <div style="font-family:Barlow Condensed,sans-serif;font-size:10px;font-weight:800;color:#5a6a80;text-transform:uppercase;letter-spacing:1.5px;margin-bottom:10px">Details</div>
       ${[
         ['Job Ref', j.jobNumber],
-        hf.poNumber?['PO / Auth Ref', hf.poNumber]:null,
+        f.poNumber?['PO / Auth Ref', f.poNumber]:null,
         j.scheduledDate?['Site Date', fmtD(j.scheduledDate)]:null,
         ['Payment Terms', resolvedTermsLabel],
         isDeposit?['Deposit Required', fmt$(depAmt)]:null,
@@ -18751,9 +18785,9 @@ function generateInvoicePDF(jobId, mode){
   </div>
 
   <!-- SCOPE -->
-  ${hf.scopeText?`<div style="padding:20px 28px;border-bottom:1px solid #e8edf5;background:#f9fbff">
+  ${f.scopeText?`<div style="padding:20px 28px;border-bottom:1px solid #e8edf5;background:#f9fbff">
     <div style="font-family:Barlow Condensed,sans-serif;font-size:10px;font-weight:800;color:#5a6a80;text-transform:uppercase;letter-spacing:1.5px;margin-bottom:8px">Scope of Work</div>
-    <div style="font-size:13px;color:#334155;white-space:pre-line;line-height:1.7">${esc(hf.scopeText)}</div>
+    <div style="font-size:13px;color:#334155;white-space:pre-line;line-height:1.7">${esc(f.scopeText)}</div>
   </div>`:''}
 
   <!-- LINE ITEMS TABLE -->
@@ -18845,7 +18879,7 @@ function generateInvoicePDF(jobId, mode){
   <!-- TERMS & FOOTER -->
   <div style="padding:18px 28px;background:#f4f7fb;border-top:1px solid #e8edf5">
     <div style="font-family:Barlow Condensed,sans-serif;font-size:10px;font-weight:800;color:#0e1f3d;text-transform:uppercase;letter-spacing:1px;margin-bottom:8px">Terms &amp; Conditions</div>
-    <div style="font-size:11px;color:#64748b;line-height:1.7">${esc(hf.terms||'Payment is due within '+resolvedTermsLabel+'. This business is registered for GST. This is a tax invoice for GST purposes.')}</div>
+    <div style="font-size:11px;color:#64748b;line-height:1.7">${esc(f.terms||_termsDefault)}</div>
   </div>
   <div style="background:#0e1f3d;padding:14px 28px;display:flex;justify-content:space-between;align-items:center">
     <div style="font-family:Barlow Condensed,sans-serif;font-size:13px;font-weight:700;color:#fff;text-transform:uppercase;letter-spacing:0.5px">Thank you for choosing ${esc(B.bizName)}</div>
@@ -18859,6 +18893,211 @@ function generateInvoicePDF(jobId, mode){
   w.document.write(html);
   w.document.close();
   showToast('Invoice opened — Print > Save as PDF to download','info');
+}
+
+// ─── DEPOSIT INVOICE EDITOR ─────────────────────────────────────────────────────
+// Deposit invoices get their own header fields (j.depositHeader) so issue date,
+// due date, payment terms (incl. "30 days end of month"), PO ref, scope of works,
+// client details, line item and terms can be edited independently of the balance invoice.
+function openDepositInvoiceEditor(jobId){
+  const j = jobs.find(x=>x.id===jobId);
+  if(!j){ showToast('Job not found','error'); return; }
+  if(!j.depositHeader) j.depositHeader = depositHeaderDefaults(j);
+  const dh = j.depositHeader;
+  const c = gc(j.clientId)||{};
+
+  const iS = 'padding:7px 10px;border:1.5px solid #dde3ec;border-radius:7px;font-size:13px;background:#fff;font-family:inherit;box-sizing:border-box;width:100%;color:#0e1f3d;outline:none';
+  const lbl = (t) => `<label style="display:block;font-size:10px;font-weight:800;color:#5a6a80;text-transform:uppercase;letter-spacing:0.8px;margin-bottom:4px">${t}</label>`;
+
+  const _ptEom = dh.payTermsEom != null ? dh.payTermsEom : false;
+  const _ptv = _ptEom ? '30eom' : (dh.payTermsDays!=null ? dh.payTermsDays : 7);
+
+  function buildHTML(){
+    const depTotal = Number(dh.depositAmount)||0;
+    return `
+    <div style="background:#fff;border-radius:16px;width:100%;max-width:860px;box-shadow:0 32px 80px rgba(0,0,0,0.5);margin:auto;font-family:'DM Sans',sans-serif">
+      <!-- Modal Header -->
+      <div style="background:#0e1f3d;padding:18px 24px;border-radius:16px 16px 0 0;display:flex;align-items:center;justify-content:space-between">
+        <div>
+          <div style="font-size:16px;font-weight:800;color:#fff;letter-spacing:-0.3px">✏ Edit & Generate Deposit Invoice</div>
+          <div style="font-size:11px;color:rgba(255,255,255,0.55);margin-top:2px">${j.invoiceNumber||j.jobNumber} DEPOSIT · ${c.company||''} — dates, terms, scope &amp; amount</div>
+        </div>
+        <button onclick="document.getElementById('dl-overlay').remove()" style="background:rgba(255,255,255,0.1);border:none;border-radius:8px;width:34px;height:34px;font-size:22px;cursor:pointer;color:#fff;line-height:1">×</button>
+      </div>
+
+      <div style="padding:24px;overflow-y:auto;max-height:80vh">
+        <!-- SECTION 1: Deposit Invoice Details -->
+        <div style="background:#f4f7fb;border-radius:12px;padding:18px;margin-bottom:18px;border:1.5px solid #dde3ec">
+          <div style="font-size:11px;font-weight:800;color:#0e1f3d;text-transform:uppercase;letter-spacing:1px;margin-bottom:14px;display:flex;align-items:center;gap:6px">
+            <span style="width:20px;height:20px;background:#0e1f3d;border-radius:50%;color:#fff;display:inline-flex;align-items:center;justify-content:center;font-size:10px;font-weight:900">1</span>
+            Deposit Invoice Details
+          </div>
+          <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px">
+            <div>${lbl('Deposit Invoice Number')}<input id="dlhf-invnum" value="${esc(dh.invoiceNumber||'')}" style="${iS}"></div>
+            <div>${lbl('Issue Date')}<input id="dlhf-issued" type="date" value="${dh.issueDate||''}" oninput="window._dlRecalcDue()" style="${iS}"></div>
+            <div>${lbl('Payment Terms')}
+              <select id="dlhf-pterms" onchange="window._dlRecalcDue()" style="${iS};cursor:pointer">
+                <option value="0" ${_ptv===0?'selected':''}>Due on Invoice</option>
+                <option value="7" ${_ptv===7?'selected':''}>7 days</option>
+                <option value="14" ${_ptv===14?'selected':''}>14 days</option>
+                <option value="21" ${_ptv===21?'selected':''}>21 days</option>
+                <option value="30" ${_ptv===30?'selected':''}>30 days</option>
+                <option value="30eom" ${_ptv==='30eom'?'selected':''}>30 days end of month</option>
+              </select>
+            </div>
+            <div>${lbl('Due Date')}<input id="dlhf-due" type="date" value="${dh.dueDate||''}" style="${iS}"></div>
+            <div>${lbl('PO / Auth Reference')}<input id="dlhf-po" value="${esc(dh.poNumber||'')}" placeholder="Client PO or auth ref" style="${iS}"></div>
+          </div>
+          <div style="font-size:11px;color:#94a3b8;margin-top:8px">"30 days end of month" = due on the last day of the month after the invoice month. Amounts shown are GST-inclusive.</div>
+        </div>
+
+        <!-- SECTION 2: Client Details -->
+        <div style="background:#f4f7fb;border-radius:12px;padding:18px;margin-bottom:18px;border:1.5px solid #dde3ec">
+          <div style="font-size:11px;font-weight:800;color:#0e1f3d;text-transform:uppercase;letter-spacing:1px;margin-bottom:14px;display:flex;align-items:center;gap:6px">
+            <span style="width:20px;height:20px;background:#0e1f3d;border-radius:50%;color:#fff;display:inline-flex;align-items:center;justify-content:center;font-size:10px;font-weight:900">2</span>
+            Client / Bill To Details
+          </div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+            <div>${lbl('Company Name')}<input id="dlhf-co" value="${esc(dh.clientCompany||'')}" style="${iS}"></div>
+            <div>${lbl('Contact Name')}<input id="dlhf-contact" value="${esc(dh.clientContact||'')}" style="${iS}"></div>
+            <div>${lbl('Address')}<input id="dlhf-addr" value="${esc(dh.clientAddress||'')}" style="${iS}"></div>
+            <div>${lbl('Phone')}<input id="dlhf-phone" value="${esc(dh.clientPhone||'')}" style="${iS}"></div>
+            <div>${lbl('Email')}<input id="dlhf-email" value="${esc(dh.clientEmail||'')}" style="${iS}"></div>
+            <div>${lbl('Client ABN')}<input id="dlhf-abn" value="${esc(dh.clientABN||'')}" placeholder="Optional" style="${iS}"></div>
+          </div>
+        </div>
+
+        <!-- SECTION 3: Scope of Work -->
+        <div style="background:#f4f7fb;border-radius:12px;padding:18px;margin-bottom:18px;border:1.5px solid #dde3ec">
+          <div style="font-size:11px;font-weight:800;color:#0e1f3d;text-transform:uppercase;letter-spacing:1px;margin-bottom:14px;display:flex;align-items:center;gap:6px">
+            <span style="width:20px;height:20px;background:#0e1f3d;border-radius:50%;color:#fff;display:inline-flex;align-items:center;justify-content:center;font-size:10px;font-weight:900">3</span>
+            Scope of Work <span style="font-size:10px;color:#94a3b8;font-weight:500;text-transform:none">(optional — printed on the deposit invoice if filled)</span>
+          </div>
+          <textarea id="dlhf-scope" rows="3" placeholder="Describe the works covered by this deposit…" style="${iS};resize:vertical">${esc(dh.scopeText||'')}</textarea>
+        </div>
+
+        <!-- SECTION 4: Deposit Line -->
+        <div style="background:#f4f7fb;border-radius:12px;padding:18px;margin-bottom:18px;border:1.5px solid #dde3ec">
+          <div style="font-size:11px;font-weight:800;color:#0e1f3d;text-transform:uppercase;letter-spacing:1px;margin-bottom:14px;display:flex;align-items:center;gap:6px">
+            <span style="width:20px;height:20px;background:#0e1f3d;border-radius:50%;color:#fff;display:inline-flex;align-items:center;justify-content:center;font-size:10px;font-weight:900">4</span>
+            Deposit Line <span style="font-size:10px;color:#94a3b8;font-weight:500;text-transform:none">(amount is GST-inclusive)</span>
+          </div>
+          <table style="width:100%;border-collapse:collapse;margin-bottom:10px">
+            <thead><tr style="background:#0e1f3d">
+              <th style="padding:9px 8px;font-size:10px;font-weight:800;color:#fff;text-transform:uppercase;letter-spacing:0.8px;text-align:left">Description</th>
+              <th style="padding:9px 8px;font-size:10px;font-weight:800;color:#fff;text-transform:uppercase;letter-spacing:0.8px;text-align:right;width:160px">Amount $</th>
+            </tr></thead>
+            <tbody>
+              <tr>
+                <td style="padding:6px 4px"><input id="dlhf-desc" value="${esc(dh.depositDesc||'')}" placeholder="Deposit 60% — …" oninput="window._dlUpdate('depositDesc',this.value)" style="${iS}"></td>
+                <td style="padding:6px 4px"><input id="dlhf-amt" type="number" value="${depTotal||''}" min="0" step="0.01" oninput="window._dlUpdate('depositAmount',Number(this.value))" style="${iS};text-align:right"></td>
+              </tr>
+            </tbody>
+          </table>
+          <div style="text-align:right;font-size:17px;font-weight:900;color:#fff;padding:12px 16px;background:#0e1f3d;border-radius:8px;display:flex;justify-content:space-between;align-items:center">
+            <span style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:rgba(255,255,255,0.7)">Deposit Total (incl. GST)</span>
+            <span style="color:#f07020">$<span id="dl-total">${depTotal.toFixed(2)}</span></span>
+          </div>
+        </div>
+
+        <!-- SECTION 5: Payment Info (from Settings) -->
+        <div style="background:#f4f7fb;border-radius:12px;padding:18px;margin-bottom:18px;border:1.5px solid #dde3ec">
+          <div style="font-size:11px;font-weight:800;color:#0e1f3d;text-transform:uppercase;letter-spacing:1px;margin-bottom:10px;display:flex;align-items:center;gap:6px">
+            <span style="width:20px;height:20px;background:#0e1f3d;border-radius:50%;color:#fff;display:inline-flex;align-items:center;justify-content:center;font-size:10px;font-weight:900">5</span>
+            Payment Info <span style="font-size:10px;color:#94a3b8;font-weight:500;text-transform:none">(pulled from Settings — edit there to change)</span>
+          </div>
+          <div style="font-size:12px;color:#334155;display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px">
+            <div style="background:#fff;border-radius:8px;padding:10px 12px;border:1px solid #dde3ec">
+              <div style="font-size:10px;font-weight:700;color:#0e1f3d;margin-bottom:4px;text-transform:uppercase">Bank Transfer</div>
+              <div>BSB: <strong>${CFG.bizBSB||'—'}</strong></div>
+              <div>Acct: <strong>${CFG.bizAccount||'—'}</strong></div>
+              <div style="font-size:11px;color:#64748b">${CFG.bizAccountName||''}</div>
+            </div>
+            <div style="background:#fff;border-radius:8px;padding:10px 12px;border:1px solid #dde3ec">
+              <div style="font-size:10px;font-weight:700;color:#f07020;margin-bottom:4px;text-transform:uppercase">PayID</div>
+              <div><strong>${CFG.bizPayID||'—'}</strong></div>
+              <div style="font-size:11px;color:#64748b">Instant bank-to-bank</div>
+            </div>
+            <div style="background:#fff;border-radius:8px;padding:10px 12px;border:1px solid #dde3ec">
+              <div style="font-size:10px;font-weight:700;color:#64748b;margin-bottom:4px;text-transform:uppercase">QR Code</div>
+              <div style="font-size:11px;color:#64748b">Auto-generated on the invoice from PayID / BSB above</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- SECTION 6: Terms -->
+        <div style="background:#f4f7fb;border-radius:12px;padding:18px;margin-bottom:20px;border:1.5px solid #dde3ec">
+          <div style="font-size:11px;font-weight:800;color:#0e1f3d;text-transform:uppercase;letter-spacing:1px;margin-bottom:10px;display:flex;align-items:center;gap:6px">
+            <span style="width:20px;height:20px;background:#0e1f3d;border-radius:50%;color:#fff;display:inline-flex;align-items:center;justify-content:center;font-size:10px;font-weight:900">6</span>
+            Terms &amp; Conditions Text
+          </div>
+          <textarea id="dlhf-terms" rows="3" style="${iS};resize:vertical">${esc(dh.terms||'')}</textarea>
+        </div>
+
+        <!-- ACTIONS -->
+        <div style="display:flex;gap:10px;justify-content:flex-end;padding-top:4px">
+          <button onclick="document.getElementById('dl-overlay').remove()" style="background:#f1f5f9;border:1.5px solid #dde3ec;border-radius:8px;padding:11px 22px;font-size:13px;font-weight:600;cursor:pointer;color:#334155">Cancel</button>
+          <button onclick="window._dlSaveAndPrint()" style="background:#7c3aed;border:none;border-radius:8px;padding:11px 28px;font-size:14px;font-weight:800;cursor:pointer;color:#fff;display:flex;align-items:center;gap:8px">
+            <span style="color:#fbbf24;font-size:16px">📄</span> Save & Generate Deposit Invoice PDF
+          </button>
+        </div>
+      </div>
+    </div>`;
+  }
+
+  const overlay = document.createElement('div');
+  overlay.id = 'dl-overlay';
+  overlay.style.cssText = 'position:fixed;inset:0;background:rgba(14,31,61,0.82);z-index:99999;display:flex;align-items:flex-start;justify-content:center;padding:20px;overflow-y:auto';
+  overlay.innerHTML = buildHTML();
+  document.body.appendChild(overlay);
+
+  window._dlUpdate = function(field, val){
+    dh[field] = val;
+    if(field==='depositAmount'){
+      const totalEl = document.getElementById('dl-total');
+      if(totalEl) totalEl.textContent = Number(val||0).toFixed(2);
+    }
+    save();
+  };
+
+  window._dlRecalcDue = function(){
+    const issued = document.getElementById('dlhf-issued')?.value;
+    const ptv = document.getElementById('dlhf-pterms')?.value||'0';
+    if(!issued) return;
+    const dueEl = document.getElementById('dlhf-due');
+    if(dueEl) dueEl.value = resolveDueDate(issued, ptv);
+    const termsEl = document.getElementById('dlhf-terms');
+    if(termsEl){
+      const lbl = ptv==='0' ? 'Due on Invoice' : (ptv==='30eom' ? '30 days end of month' : ptv+' days');
+      termsEl.value = termsEl.value.replace(/Payment is due within [^.]+( of invoice date\.)/,'Payment is due within '+lbl+'$1');
+    }
+  };
+
+  window._dlSaveAndPrint = function(){
+    dh.invoiceNumber = document.getElementById('dlhf-invnum')?.value||dh.invoiceNumber;
+    dh.issueDate = document.getElementById('dlhf-issued')?.value||dh.issueDate;
+    dh.dueDate = document.getElementById('dlhf-due')?.value||dh.dueDate;
+    const ptermsEl = document.getElementById('dlhf-pterms');
+    if(ptermsEl){ dh.payTermsDays = parseInt(ptermsEl.value); dh.payTermsEom = termsEOM(ptermsEl.value); }
+    dh.poNumber = document.getElementById('dlhf-po')?.value||'';
+    dh.clientCompany = document.getElementById('dlhf-co')?.value||dh.clientCompany;
+    dh.clientContact = document.getElementById('dlhf-contact')?.value||'';
+    dh.clientAddress = document.getElementById('dlhf-addr')?.value||'';
+    dh.clientPhone = document.getElementById('dlhf-phone')?.value||'';
+    dh.clientEmail = document.getElementById('dlhf-email')?.value||'';
+    dh.clientABN = document.getElementById('dlhf-abn')?.value||'';
+    dh.scopeText = document.getElementById('dlhf-scope')?.value||'';
+    dh.depositDesc = document.getElementById('dlhf-desc')?.value||dh.depositDesc;
+    const amtEl = document.getElementById('dlhf-amt');
+    if(amtEl) dh.depositAmount = Number(amtEl.value)||0;
+    dh.terms = document.getElementById('dlhf-terms')?.value||dh.terms;
+    // Keep the stored deposit amount in sync so hasDeposit / email / revenue all match the invoice
+    if(dh.depositAmount > 0) j.depositAmount = dh.depositAmount;
+    save();
+    const overlayEl = document.getElementById('dl-overlay');
+    if(overlayEl) overlayEl.remove();
+    generateInvoicePDF(jobId, 'deposit');
+  };
 }
 
 // ─── RECEIPT CAMERA → EXPENSE ─────────────────────────────────────────────────
@@ -21057,6 +21296,14 @@ function _renderMobilePayment(j, c){
         </div>
         <span style="margin-left:auto">›</span>
       </button>
+      <button onclick="openDepositInvoiceEditor('${j.id}')" style="display:flex;align-items:center;gap:12px;background:#f5f3ff;color:#5b21b6;border:1px solid #ddd6fe;border-radius:12px;padding:14px 16px;font-size:14px;font-weight:700;cursor:pointer;width:100%;text-align:left">
+        <span style="font-size:22px">✏️</span>
+        <div>
+          <div>Edit Deposit Invoice</div>
+          <div style="font-size:11px;opacity:0.8">Dates, terms, scope &amp; amount</div>
+        </div>
+        <span style="margin-left:auto">›</span>
+      </button>
       <button onclick="sendDepositInvoiceEmail('${j.id}')" style="display:flex;align-items:center;gap:12px;background:#7c3aed;color:#fff;border:none;border-radius:12px;padding:14px 16px;font-size:14px;font-weight:700;cursor:pointer;width:100%;text-align:left">
         <span style="font-size:22px">✉️</span>
         <div>
@@ -21440,6 +21687,34 @@ function depositAmountFor(j){
   return Number(j.quoteAmount||0)*effectiveDepositPct(j)/100;
 }
 
+// Default header fields for the deposit invoice — overridable in the deposit editor.
+// Prefers the full invoice's saved header fields where sensible.
+function depositHeaderDefaults(j){
+  const c = gc(j.clientId)||{};
+  const hf = j.invoiceHeaderFields||{};
+  const issue = hf.issueDate || today();
+  const cfgTerms = CFG.invoicePaymentTerms!=null ? CFG.invoicePaymentTerms : (CFG.bizPaymentTerms||'7 days');
+  const eom = termsEOM(cfgTerms);
+  return {
+    invoiceNumber: (j.invoiceNumber||j.jobNumber)+' DEPOSIT',
+    issueDate: issue,
+    dueDate: hf.dueDate || resolveDueDate(issue, eom?'30eom':cfgTerms),
+    payTermsDays: payTermsDays(cfgTerms,7),
+    payTermsEom: eom,
+    poNumber: hf.poNumber || j.poNumber || '',
+    clientCompany: hf.clientCompany || c.company || '',
+    clientContact: hf.clientContact || c.contact || '',
+    clientAddress: hf.clientAddress || c.address || '',
+    clientPhone: hf.clientPhone || c.phone || '',
+    clientEmail: hf.clientEmail || c.email || '',
+    clientABN: hf.clientABN || c.abn || '',
+    scopeText: hf.scopeText || j.scope || '',
+    depositDesc: 'Deposit '+(effectiveDepositPct(j))+'% — '+(hf.scopeText||j.scope||'Works as agreed'),
+    depositAmount: depositAmountFor(j),
+    terms: hf.terms || ''
+  };
+}
+
 function sendInvoiceEmail(jobId){
   const j = jobs.find(x=>x.id===jobId);
   if(!j){ showToast('Job not found','error'); return; }
@@ -21482,6 +21757,10 @@ function sendDepositInvoiceEmail(jobId){
   const gstApplied = CFG.gstRegistered !== false;
   const depGst = gstApplied ? depAmt - depAmt/(1+gstR) : 0;
   const ref = depositRefFor(j);
+  const dh = j.depositHeader || depositHeaderDefaults(j);
+  const depDue = dh.dueDate ? fmtD(dh.dueDate) : '';
+  const depTerms = dh.payTermsEom ? '30 days end of month' : (dh.payTermsDays===0?'Due on Invoice':(dh.payTermsDays||7)+' days');
+  const depDueLine = depDue ? `\nDeposit Due: ${depDue} (${depTerms})` : '';
   const firstName = (c.contact||c.company||'').split(' ')[0];
   const payUrl = stripePayUrl(jobId, ref);
   const bsb = CFG.bizBSB||'';
@@ -21494,7 +21773,7 @@ function sendDepositInvoiceEmail(jobId){
 
   const bankSection = (bsb||acct) ? `BSB: ${bsb}\nAccount: ${acct}\nAccount Name: ${CFG.bizAccountName||CFG.bizName}\n${payId?'PayID: '+payId+'\n':''}Reference: ${ref}` : '';
 
-  const body = `Hi ${firstName},\n\nThank you for confirming your project with ${CFG.bizName}.\n\nA deposit invoice has been raised for the works:\n\nInvoice: ${ref}\nDeposit (incl. GST): ${fmt$(depAmt)}${gstApplied?`\n  - of which GST: ${fmt$(depGst)}`:''}\nJob Total (incl. GST): ${fmt$(total)}${bal>0?`\nBalance Due on Completion (incl. GST): ${fmt$(bal)}`:''}\n\n${paySection}${bankSection}\n\nWork will be scheduled once the deposit is received.\n\nIf you have any questions please don't hesitate to call.\n\nKind regards,\n${CFG.bizName}\n${CFG.bizPhone} | ${CFG.bizEmail}`;
+  const body = `Hi ${firstName},\n\nThank you for confirming your project with ${CFG.bizName}.\n\nA deposit invoice has been raised for the works:\n\nInvoice: ${ref}\nDeposit (incl. GST): ${fmt$(depAmt)}${gstApplied?`\n  - of which GST: ${fmt$(depGst)}`:''}${depDueLine}\nJob Total (incl. GST): ${fmt$(total)}${bal>0?`\nBalance Due on Completion (incl. GST): ${fmt$(bal)}`:''}\n\n${paySection}${bankSection}\n\nWork will be scheduled once the deposit is received.\n\nIf you have any questions please don't hesitate to call.\n\nKind regards,\n${CFG.bizName}\n${CFG.bizPhone} | ${CFG.bizEmail}`;
 
   const subject = `Deposit Invoice ${ref} — ${fmt$(depAmt)} — ${CFG.bizName}`;
 
