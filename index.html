@@ -4840,6 +4840,8 @@ function renderJobPipelineCard(j){
     heading = `Deposit due — $${(quoteAmt*0.5).toFixed(2)} (50%)`;
     body = `<span style="color:#9a3412">Send deposit request to client. Once received, mark as paid to proceed.</span>`;
     if(phone) primaryBtn = `<button onclick="sendWhatsApp('${j.id}','confirm')" style="background:#25d366;color:#fff;border:none;border-radius:8px;padding:10px 18px;font-size:13px;font-weight:700;cursor:pointer">💬 Send Deposit Request</button>`;
+    secondaryBtns += `<button onclick="sendDepositInvoiceEmail('${j.id}')" style="background:#fff;border:1px solid #e2e8f0;border-radius:8px;padding:10px 16px;font-size:13px;font-weight:700;cursor:pointer;color:#5b21b6">💳 Send Deposit Invoice</button>`;
+    secondaryBtns += `<button onclick="printDepositInvoiceDoc('${j.id}')" style="background:#fff;border:1px solid #e2e8f0;border-radius:8px;padding:10px 16px;font-size:13px;font-weight:600;cursor:pointer;color:#334155">📄 Deposit Invoice PDF</button>`;
     secondaryBtns += `<button onclick="advanceStatus('${j.id}','deposit_paid')" style="background:#1e3a5f;color:#fff;border:none;border-radius:8px;padding:10px 16px;font-size:13px;font-weight:700;cursor:pointer">✓ Deposit Received</button>`;
 
   } else if(status === 'approved'){
@@ -4903,6 +4905,7 @@ function renderJobDetail(id){
   if(!j)return;
   const c=gc(j.clientId);
   const next=NEXT[j.status];
+  const hasDeposit = Number(j.depositAmount) > 0 || ['deposit_due','deposit_paid'].includes(j.status);
   document.getElementById('modal-title').textContent=j.jobNumber+' — '+(gc(j.clientId)?.company||'');
   document.getElementById('modal-box').style.maxWidth='780px';
 
@@ -5073,6 +5076,8 @@ function renderJobDetail(id){
       <button onclick="printQuoteDoc('${j.id}')" style="display:flex;align-items:center;gap:5px;background:#3b82f6;color:#fff;border:none;border-radius:8px;padding:9px 13px;font-size:12px;font-weight:600">⊞ Quote PDF</button>
       <button onclick="printInvoiceDoc('${j.id}')" style="display:flex;align-items:center;gap:5px;background:#10b981;color:#fff;border:none;border-radius:8px;padding:9px 13px;font-size:12px;font-weight:600">⊞ Invoice PDF</button>
       <button onclick="sendInvoiceEmail('${j.id}')" style="display:flex;align-items:center;gap:5px;background:#635bff;color:#fff;border:none;border-radius:8px;padding:9px 13px;font-size:12px;font-weight:600;cursor:pointer">💳 Send Invoice Email</button>
+      ${hasDeposit?`<button onclick="sendDepositInvoiceEmail('${j.id}')" style="display:flex;align-items:center;gap:5px;background:#f5f3ff;color:#5b21b6;border:1px solid #ddd6fe;border-radius:8px;padding:9px 13px;font-size:12px;font-weight:700;cursor:pointer">💳 Send Deposit Invoice</button>`:''}
+      ${hasDeposit?`<button onclick="printDepositInvoiceDoc('${j.id}')" style="display:flex;align-items:center;gap:5px;background:#f5f3ff;color:#5b21b6;border:1px solid #ddd6fe;border-radius:8px;padding:9px 13px;font-size:12px;font-weight:700;cursor:pointer">⊞ Deposit Invoice PDF</button>`:''}
       ${j.type==='SAQ'?`<button onclick="convertQuoteToInvoice('${j.id}')" style="display:flex;align-items:center;gap:5px;background:#f59e0b;color:#0f172a;border:none;border-radius:8px;padding:9px 13px;font-size:12px;font-weight:700;cursor:pointer">⚡ Convert to Invoice</button>`:''}
       <button onclick="duplicateJob('${j.id}')" style="display:flex;align-items:center;gap:5px;background:#f1f5f9;border:1px solid #e2e8f0;border-radius:8px;padding:9px 13px;font-size:12px;font-weight:600;color:#334155;cursor:pointer">⊕ Duplicate Job</button>
       <button onclick="openModal('email','${j.id}')" style="display:flex;align-items:center;gap:5px;background:#f1f5f9;border:1px solid #e2e8f0;border-radius:8px;padding:9px 13px;font-size:12px;font-weight:600;color:#334155">✉ Email</button>
@@ -15354,6 +15359,11 @@ function printInvoiceDoc(jobId){
   d.close();
 }
 
+// ─── DEPOSIT INVOICE PDF ───────────────────────────────────────────────────────
+function printDepositInvoiceDoc(jobId){
+  generateInvoicePDF(jobId, 'deposit');
+}
+
 // ─── VEHICLE KM LOG ───────────────────────────────────────────────────────────
 function renderKmLog(){
   // AU FY for km log stats
@@ -18616,25 +18626,30 @@ function openInvoiceLineEditor(jobId){
   };
 }
 
-function generateInvoicePDF(jobId){
+function generateInvoicePDF(jobId, mode){
+  mode = mode || 'full';
+  const isDeposit = mode === 'deposit';
   const j = jobs.find(x=>x.id===jobId);
   if(!j){ showToast('Job not found','error'); return; }
   const B = CFG;
   const hf = j.invoiceHeaderFields || {};
-  const invNum = hf.invoiceNumber || j.invoiceNumber || j.jobNumber;
+  const invNum = isDeposit ? (j.invoiceNumber||j.jobNumber)+' DEPOSIT' : (hf.invoiceNumber || j.invoiceNumber || j.jobNumber);
   const issueDate = hf.issueDate ? new Date(hf.issueDate+'T00:00:00').toLocaleDateString('en-AU',{day:'2-digit',month:'long',year:'numeric'}) : new Date().toLocaleDateString('en-AU',{day:'2-digit',month:'long',year:'numeric'});
   const dueDate = hf.dueDate ? new Date(hf.dueDate+'T00:00:00').toLocaleDateString('en-AU',{day:'2-digit',month:'long',year:'numeric'}) : '';
   // Use the terms the user selected in the line editor — hf.payTermsDays is saved by syncHeaderFields
   // Falls back to CFG only if the editor was never opened
   const resolvedTermDays = (hf.payTermsDays !== undefined && hf.payTermsDays !== null) ? hf.payTermsDays : payTermsDays(B.invoicePaymentTerms||B.bizPaymentTerms,7);
   const resolvedTermsLabel = resolvedTermDays === 0 ? 'Due on Invoice' : resolvedTermDays + ' days';
-  const isPaid = j.status==='paid';
-  const invAmt = Number(j.invoiceAmount||j.quoteAmount||0);
+  const isPaid = isDeposit ? (Number(j.depositAmount)>0 && !!j.depositDate) : j.status==='paid';
+  const depAmt = isDeposit ? (Number(j.depositAmount)>0 ? Number(j.depositAmount) : Number(j.quoteAmount||0)*effectiveDepositPct(j)/100) : 0;
+  const invAmt = isDeposit ? depAmt : Number(j.invoiceAmount||j.quoteAmount||0);
 
   // Build line items
-  const lines = (j.invoiceLines && j.invoiceLines.length)
-    ? j.invoiceLines
-    : [{desc:hf.scopeText||j.scope||'Works as agreed', qty:1, unit:invAmt, amount:invAmt}];
+  const lines = isDeposit
+    ? [{desc:'Deposit '+(effectiveDepositPct(j))+'% — '+(hf.scopeText||j.scope||'Works as agreed'), qty:1, unit:depAmt, amount:depAmt}]
+    : ((j.invoiceLines && j.invoiceLines.length)
+        ? j.invoiceLines
+        : [{desc:hf.scopeText||j.scope||'Works as agreed', qty:1, unit:invAmt, amount:invAmt}]);
   const lineTotal = lines.reduce((s,l)=>s+(l.qty*l.unit),0);
 
   // QR code
@@ -18667,7 +18682,7 @@ function generateInvoicePDF(jobId){
   <button onclick="window.print()" style="background:#0e1f3d;color:#fff;border:none;border-radius:8px;padding:9px 20px;font-size:13px;font-weight:700;cursor:pointer;font-family:Barlow,sans-serif">⊡ Print / Save PDF</button>
 </div>
 <div class="page">
-  ${isPaid?'<div class="paid-watermark">PAID</div>':''}
+  ${isPaid?'<div class="paid-watermark">'+(isDeposit?'DEPOSIT PAID':'PAID')+'</div>':''}
 
   <!-- HEADER -->
   <div style="background:#0e1f3d;padding:28px 36px;display:flex;justify-content:space-between;align-items:center">
@@ -18679,7 +18694,7 @@ function generateInvoicePDF(jobId){
       </div>
     </div>
     <div style="text-align:right">
-      <div style="font-family:Barlow Condensed,sans-serif;font-size:42px;font-weight:900;color:#f07020;letter-spacing:4px;line-height:1">${CFG.gstRegistered !== false ? 'TAX INVOICE' : 'INVOICE'}</div>
+      <div style="font-family:Barlow Condensed,sans-serif;font-size:42px;font-weight:900;color:#f07020;letter-spacing:4px;line-height:1">${isDeposit ? (CFG.gstRegistered !== false ? 'TAX INVOICE — DEPOSIT' : 'DEPOSIT INVOICE') : (CFG.gstRegistered !== false ? 'TAX INVOICE' : 'INVOICE')}</div>
       <div style="font-family:Barlow Condensed,sans-serif;font-size:18px;font-weight:700;color:#fff;margin-top:4px;letter-spacing:2px">${esc(invNum)}</div>
     </div>
   </div>
@@ -18716,6 +18731,8 @@ function generateInvoicePDF(jobId){
         hf.poNumber?['PO / Auth Ref', hf.poNumber]:null,
         j.scheduledDate?['Site Date', fmtD(j.scheduledDate)]:null,
         ['Payment Terms', resolvedTermsLabel],
+        isDeposit?['Deposit Required', fmt$(depAmt)]:null,
+        isDeposit?['Balance Due Later', fmt$(Math.max(0, Number(j.quoteAmount||0)-depAmt))]:null,
         j.supplierRef?['Supplier Ref', j.supplierRef]:null,
       ].filter(Boolean).map(([k,v])=>`<div style="display:flex;justify-content:space-between;margin-bottom:7px;padding-bottom:7px;border-bottom:1px solid #f1f5f9">
         <span style="font-size:12px;color:#64748b;font-weight:600">${k}</span>
@@ -18762,7 +18779,7 @@ function generateInvoicePDF(jobId){
 
   <!-- PAID STAMP -->
   ${isPaid?`<div style="padding:14px 28px;margin:0;background:#ecfdf5;border-top:2px solid #10b981;border-bottom:2px solid #10b981;text-align:center">
-    <span style="font-family:Barlow Condensed,sans-serif;font-size:20px;font-weight:900;color:#059669;letter-spacing:2px">✓ PAID — ${fmtD(j.paidDate)}</span>
+    <span style="font-family:Barlow Condensed,sans-serif;font-size:20px;font-weight:900;color:#059669;letter-spacing:2px">✓ ${isDeposit?'DEPOSIT PAID':'PAID'} — ${isDeposit?fmtD(j.depositDate):fmtD(j.paidDate)}</span>
   </div>`:''}
 
   <!-- HOW TO PAY -->
@@ -18787,7 +18804,7 @@ function generateInvoicePDF(jobId){
         <div style="background:#fff;border:2px solid #635bff;border-left:5px solid #635bff;border-radius:10px;padding:18px;border-left:4px solid #635bff">
           <div style="font-family:Barlow Condensed,sans-serif;font-size:13px;font-weight:800;color:#635bff;text-transform:uppercase;letter-spacing:1px;margin-bottom:8px">💳 Card Payment</div>
           ${(()=>{
-            const sUrl = stripePayUrl(jobId);
+            const sUrl = stripePayUrl(jobId, isDeposit?invNum:undefined);
             if(sUrl) {
               const cardTotal = (CFG.gstRegistered !== false ? lineTotal * (1 + (Number(CFG.gst) || 0.1)) : lineTotal);
               const cardSurcharge = cardTotal * 0.017;
@@ -19109,11 +19126,11 @@ function sendWhatsApp(jobId, type='confirm'){
 }
 
 // ─── STRIPE PAYMENT LINK ──────────────────────────────────────────────────────
-function stripePayUrl(jobId){
+function stripePayUrl(jobId, refOverride){
   const j = jobs.find(x=>x.id===jobId); if(!j) return '';
   const base = (CFG.stripePaymentLinkBase||'').trim();
   if(!base) return '';
-  const inv = j.invoiceNumber || j.jobNumber;
+  const inv = refOverride || j.invoiceNumber || j.jobNumber;
   const amt = Number(j.invoiceAmount||j.quoteAmount||0);
   // Stripe payment links support ?prefilled_quantity for fixed-price links,
   // and client_reference_id for tracking. We also pass amount in description.
@@ -21022,6 +21039,23 @@ function _renderMobilePayment(j, c){
         </div>
         <span style="margin-left:auto">›</span>
       </button>
+      ${depAmt>0?`
+      <button onclick="printDepositInvoiceDoc('${j.id}')" style="display:flex;align-items:center;gap:12px;background:#f5f3ff;color:#5b21b6;border:1px solid #ddd6fe;border-radius:12px;padding:14px 16px;font-size:14px;font-weight:700;cursor:pointer;width:100%;text-align:left">
+        <span style="font-size:22px">💳</span>
+        <div>
+          <div>Open Deposit Invoice PDF</div>
+          <div style="font-size:11px;opacity:0.8">${fmt$(depAmt)} deposit · print or email</div>
+        </div>
+        <span style="margin-left:auto">›</span>
+      </button>
+      <button onclick="sendDepositInvoiceEmail('${j.id}')" style="display:flex;align-items:center;gap:12px;background:#7c3aed;color:#fff;border:none;border-radius:12px;padding:14px 16px;font-size:14px;font-weight:700;cursor:pointer;width:100%;text-align:left">
+        <span style="font-size:22px">✉️</span>
+        <div>
+          <div>Email Deposit Invoice</div>
+          <div style="font-size:11px;opacity:0.8">Send ${fmt$(depAmt)} deposit invoice</div>
+        </div>
+        <span style="margin-left:auto">›</span>
+      </button>`:''}
       <button onclick="printQuoteDoc('${j.id}')" style="display:flex;align-items:center;gap:12px;background:#6366f1;color:#fff;border:none;border-radius:12px;padding:14px 16px;font-size:14px;font-weight:700;cursor:pointer;width:100%;text-align:left">
         <span style="font-size:22px">📋</span>
         <div>
@@ -21352,38 +21386,14 @@ function applyQuoteTemplate(jobId){
 // FEATURE 3: SMART INVOICE EMAIL WITH STRIPE
 // ═══════════════════════════════════════════════════════════════════════════════
 
-function sendInvoiceEmail(jobId){
-  const j = jobs.find(x=>x.id===jobId);
-  if(!j){ showToast('Job not found','error'); return; }
-  const c = gc(j.clientId);
-  if(!c?.email){ showToast('No email address for this client','warn'); return; }
-
-  const inv = j.invoiceNumber || j.jobNumber;
-  const amt = fmt$(j.invoiceAmount||0);
-  const due = j.invoiceDue ? fmtD(j.invoiceDue) : 'ASAP';
-  const firstName = (c.contact||c.company||'').split(' ')[0];
-  const payUrl = stripePayUrl(jobId);
-  const bsb = CFG.bizBSB||'';
-  const acct = CFG.bizAccount||'';
-  const payId = CFG.bizPayID||'';
-
-  const paySection = payUrl
-    ? `PAY BY CARD (fastest):\n${payUrl}\n\nOR bank transfer:\n`
-    : `Bank transfer:\n`;
-
-  const bankSection = (bsb||acct) ? `BSB: ${bsb}\nAccount: ${acct}\nAccount Name: ${CFG.bizAccountName||CFG.bizName}\n${payId?'PayID: '+payId+'\n':''}Reference: ${inv}` : '';
-
-  const body = `Hi ${firstName},\n\nPlease find your invoice for recent works at your property.\n\nInvoice: ${inv}\nAmount: ${amt}\nDue: ${due}\n\n${paySection}${bankSection}\n\nIf you have any questions please don't hesitate to call.\n\nKind regards,\n${CFG.bizName}\n${CFG.bizPhone} | ${CFG.bizEmail}`;
-
-  const subject = `Invoice ${inv} — ${amt} — ${CFG.bizName}`;
-
-  // Show modal with preview + send options
-  document.getElementById('modal-title').textContent = '📧 Send Invoice Email';
+function openEmailPreviewModal(opts){
+  const {title, to, subject, body, payUrl} = opts;
+  document.getElementById('modal-title').textContent = title;
   document.getElementById('modal-box').style.maxWidth = '640px';
   document.getElementById('modal-body').innerHTML = `
     <div style="margin-bottom:14px">
       <div style="font-size:12px;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:6px">To</div>
-      <input id="inv-email-to" value="${esc(c.email)}" style="width:100%;padding:10px 12px;border:1px solid #e2e8f0;border-radius:8px;font-size:13px;box-sizing:border-box">
+      <input id="inv-email-to" value="${esc(to)}" style="width:100%;padding:10px 12px;border:1px solid #e2e8f0;border-radius:8px;font-size:13px;box-sizing:border-box">
     </div>
     <div style="margin-bottom:14px">
       <div style="font-size:12px;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:6px">Subject</div>
@@ -21409,6 +21419,74 @@ function sendInvoiceEmail(jobId){
     </div>
   `;
   openModal('_custom');
+}
+
+function depositRefFor(j){
+  return (j.invoiceNumber||j.jobNumber)+' DEPOSIT';
+}
+
+function depositAmountFor(j){
+  const d = Number(j.depositAmount||0);
+  if(d>0) return d;
+  return Number(j.quoteAmount||0)*effectiveDepositPct(j)/100;
+}
+
+function sendInvoiceEmail(jobId){
+  const j = jobs.find(x=>x.id===jobId);
+  if(!j){ showToast('Job not found','error'); return; }
+  const c = gc(j.clientId);
+  if(!c?.email){ showToast('No email address for this client','warn'); return; }
+
+  const inv = j.invoiceNumber || j.jobNumber;
+  const amt = fmt$(j.invoiceAmount||0);
+  const due = j.invoiceDue ? fmtD(j.invoiceDue) : 'ASAP';
+  const firstName = (c.contact||c.company||'').split(' ')[0];
+  const payUrl = stripePayUrl(jobId);
+  const bsb = CFG.bizBSB||'';
+  const acct = CFG.bizAccount||'';
+  const payId = CFG.bizPayID||'';
+
+  const paySection = payUrl
+    ? `PAY BY CARD (fastest):\n${payUrl}\n\nOR bank transfer:\n`
+    : `Bank transfer:\n`;
+
+  const bankSection = (bsb||acct) ? `BSB: ${bsb}\nAccount: ${acct}\nAccount Name: ${CFG.bizAccountName||CFG.bizName}\n${payId?'PayID: '+payId+'\n':''}Reference: ${inv}` : '';
+
+  const body = `Hi ${firstName},\n\nPlease find your invoice for recent works at your property.\n\nInvoice: ${inv}\nAmount: ${amt}\nDue: ${due}\n\n${paySection}${bankSection}\n\nIf you have any questions please don't hesitate to call.\n\nKind regards,\n${CFG.bizName}\n${CFG.bizPhone} | ${CFG.bizEmail}`;
+
+  const subject = `Invoice ${inv} — ${amt} — ${CFG.bizName}`;
+
+  openEmailPreviewModal({title:'📧 Send Invoice Email', to:c.email, subject, body, payUrl});
+}
+
+function sendDepositInvoiceEmail(jobId){
+  const j = jobs.find(x=>x.id===jobId);
+  if(!j){ showToast('Job not found','error'); return; }
+  const c = gc(j.clientId);
+  if(!c?.email){ showToast('No email address for this client','warn'); return; }
+
+  const depAmt = depositAmountFor(j);
+  if(!(depAmt>0)){ showToast('No deposit amount set for this job','warn'); return; }
+  const total = Number(j.quoteAmount||0);
+  const bal = Math.max(0, total-depAmt);
+  const ref = depositRefFor(j);
+  const firstName = (c.contact||c.company||'').split(' ')[0];
+  const payUrl = stripePayUrl(jobId, ref);
+  const bsb = CFG.bizBSB||'';
+  const acct = CFG.bizAccount||'';
+  const payId = CFG.bizPayID||'';
+
+  const paySection = payUrl
+    ? `PAY DEPOSIT BY CARD (fastest):\n${payUrl}\n\nOR bank transfer:\n`
+    : `Bank transfer:\n`;
+
+  const bankSection = (bsb||acct) ? `BSB: ${bsb}\nAccount: ${acct}\nAccount Name: ${CFG.bizAccountName||CFG.bizName}\n${payId?'PayID: '+payId+'\n':''}Reference: ${ref}` : '';
+
+  const body = `Hi ${firstName},\n\nThank you for confirming your project with ${CFG.bizName}.\n\nA deposit invoice has been raised for the works:\n\nInvoice: ${ref}\nDeposit Due: ${fmt$(depAmt)}\nJob Total: ${fmt$(total)}${bal>0?`\nBalance Due on Completion: ${fmt$(bal)}`:''}\n\n${paySection}${bankSection}\n\nWork will be scheduled once the deposit is received.\n\nIf you have any questions please don't hesitate to call.\n\nKind regards,\n${CFG.bizName}\n${CFG.bizPhone} | ${CFG.bizEmail}`;
+
+  const subject = `Deposit Invoice ${ref} — ${fmt$(depAmt)} — ${CFG.bizName}`;
+
+  openEmailPreviewModal({title:'📧 Send Deposit Invoice Email', to:c.email, subject, body, payUrl});
 }
 
 
