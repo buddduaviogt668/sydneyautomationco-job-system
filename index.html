@@ -7373,8 +7373,9 @@ function finMonthOptions(){
   const now=new Date();
   const cur=new Date(now.getFullYear(),now.getMonth(),1);
   let earliest=cur;
-  jobs.forEach(j=>{['paidDate','invoiceDate','createdAt'].forEach(k=>{const d=j[k]; if(d&&d<earliest) earliest=new Date(String(d).slice(0,10)+'T00:00:00');});});
-  (window._supInvoices||[]).forEach(i=>{if(i.date&&i.date<earliest) earliest=new Date(String(i.date).slice(0,10)+'T00:00:00');});
+  const consider=(s)=>{ if(!s) return; const dt=new Date(String(s).slice(0,10)+'T00:00:00'); if(!isNaN(dt)&&dt<earliest) earliest=dt; };
+  jobs.forEach(j=>{['paidDate','invoiceDate','createdAt'].forEach(k=>consider(j[k]));});
+  (window._supInvoices||[]).forEach(i=>consider(i.date));
   const out=[];
   for(let d=cur; d>=earliest && out.length<60; d=new Date(d.getFullYear(),d.getMonth()-1,1)){
     out.push(`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`);
