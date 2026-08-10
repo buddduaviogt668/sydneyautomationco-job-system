@@ -12907,18 +12907,31 @@ async function runRealLeadGeneration(){
   renderMain();
 }
 
+// Overpass instances — the main one is frequently overloaded/blocking requests,
+// so we race all mirrors and take the first that returns businesses.
+// kumi.systems, maps.mail.ru and overpass.osm.ch send CORS headers.
+const OVERPASS_ENDPOINTS = [
+  'https://overpass-api.de/api/interpreter',
+  'https://overpass.osm.ch/api/interpreter',
+  'https://overpass.kumi.systems/api/interpreter',
+  'https://maps.mail.ru/osm/tools/overpass/api/interpreter',
+];
+
 // Query Overpass (OpenStreetMap) for real businesses by tag within a location radius
 async function searchOsmBusinesses(tags, location, limit){
   // 1) Geocode the location to a rough bounding box (Nominatim, free)
   let bbox = null;
+  const geoCtrl = new AbortController();
+  const geoTimer = setTimeout(()=>geoCtrl.abort(), 12000);
   try {
-    const gj = await fetch('https://nominatim.openstreetmap.org/search?format=json&limit=1&q='+encodeURIComponent(location+' Australia'))
+    const gj = await fetch('https://nominatim.openstreetmap.org/search?format=json&limit=1&q='+encodeURIComponent(location+' Australia'), {signal:geoCtrl.signal})
       .then(r=>r.json());
     if(gj && gj[0] && gj[0].boundingbox){
       const [s,n,w,e] = gj[0].boundingbox.map(Number);
       bbox = [s,w,n,e].join(',');
     }
   } catch(err){ console.warn('Geocode failed:', err); }
+  clearTimeout(geoTimer);
   if(!bbox){
     // Fall back to a fixed Sydney metro box (~70km)
     bbox = '-34.10,150.70,-33.50,151.35';
@@ -12930,37 +12943,81 @@ async function searchOsmBusinesses(tags, location, limit){
   ).join('');
   const query = `[out:json][timeout:35];(${clauses});out center tags 120;`;
 
-  const res = await fetch('https://overpass-api.de/api/interpreter', {
-    method:'POST',
-    headers:{'Content-Type':'application/x-www-form-urlencoded'},
-    body:'data='+encodeURIComponent(query),
-  });
-  if(!res.ok) throw new Error('Map data error ('+res.status+')');
-  const data = await res.json();
-
-  const out = [];
-  (data.elements||[]).forEach(el=>{
-    const t = el.tags||{};
-    const name = t.name || t['name:en'] || '';
-    if(!name || t.amenity==='street_lighting') return;
-    out.push({
-      name,
-      contact: t['contact:name']||t.contact_person||'',
-      phone:   t['contact:phone']||t.phone||'',
-      email:   t['contact:email']||t.email||'',
-      website: t['contact:website']||t.website||'',
-      suburb:  t['addr:suburb']||t['addr:city']||t['addr:district']||'',
-      why:     t['shop']?('Operates as a '+t['shop']+' business'):(t['office']?('Operates as a '+t['office']+' firm'):(t['tourism']?('Operates as a '+t['tourism']+' venue'):'')),
-      value:   3000 + Math.round(Math.random()*4000),
+  // 3) Race all mirrors in parallel and take the first mirror that returns
+  //    businesses — one server being down/blocked must not kill the search.
+  //    Resolves as soon as any mirror returns data (fast), and only waits out
+  //    the slow ones when every responder so far came back empty.
+  const outcome = await new Promise((resolve) => {
+    let remaining = OVERPASS_ENDPOINTS.length;
+    let anySucceeded = false;
+    OVERPASS_ENDPOINTS.forEach(endpoint => {
+      queryOverpass(endpoint, query)
+        .then(items => {
+          if(items.length){ resolve({items}); return; }
+          anySucceeded = true;
+          remaining--;
+          if(remaining === 0) resolve({empty:true});
+        })
+        .catch(() => {
+          remaining--;
+          if(remaining === 0) resolve({unreachable:!anySucceeded});
+        });
     });
   });
 
-  // Rank: prefer entries with phone/website/address, then named
-  return out.sort((a,b)=>{
-    const scoreA = (a.phone?a.phone.length:0)+(a.website?8:0)+(a.email?6:0)+(a.suburb?4:0);
-    const scoreB = (b.phone?b.phone.length:0)+(b.website?8:0)+(b.email?6:0)+(b.suburb?4:0);
-    return scoreB-scoreA;
-  }).slice(0, limit);
+  if(outcome.items && outcome.items.length) return outcome.items.slice(0, limit);
+  if(outcome.unreachable) throw new Error('The map servers are unreachable right now (OpenStreetMap is often overloaded). Try again in a few minutes, or use ✦ AI Suggestions.');
+  throw new Error('No matching businesses found near "'+location+'" — try a nearby suburb or a different target');
+}
+
+// Query one Overpass instance; resolve with ranked businesses (or []) on success,
+// reject on network/HTTP failure. Independent per mirror so failures are isolated.
+async function queryOverpass(endpoint, query){
+  const ctrl = new AbortController();
+  const timer = setTimeout(()=>ctrl.abort(), 18000);
+  try {
+    const res = await fetch(endpoint, {
+      method:'POST',
+      headers:{
+        'Content-Type':'application/x-www-form-urlencoded',
+        'Accept':'*/*',
+        'User-Agent':'SydneyAutomationCo-LeadFinder/1.0 (contact: george@sydneyautomation.com.au)',
+      },
+      body:'data='+encodeURIComponent(query),
+      signal: ctrl.signal,
+    });
+    if(!res.ok) throw new Error('Map server error ('+res.status+')');
+    const data = await res.json();
+
+    const out = [];
+    (data.elements||[]).forEach(el=>{
+      const t = el.tags||{};
+      const name = t.name || t['name:en'] || '';
+      if(!name || t.amenity==='street_lighting') return;
+      out.push({
+        name,
+        contact: t['contact:name']||t.contact_person||'',
+        phone:   t['contact:phone']||t.phone||'',
+        email:   t['contact:email']||t.email||'',
+        website: t['contact:website']||t.website||'',
+        suburb:  t['addr:suburb']||t['addr:city']||t['addr:district']||'',
+        why:     t['shop']?('Operates as a '+t['shop']+' business'):(t['office']?('Operates as a '+t['office']+' firm'):(t['tourism']?('Operates as a '+t['tourism']+' venue'):'')),
+        value:   3000 + Math.round(Math.random()*4000),
+      });
+    });
+
+    // Rank: prefer entries with phone/website/address, then named
+    return out.sort((a,b)=>{
+      const scoreA = (a.phone?a.phone.length:0)+(a.website?8:0)+(a.email?6:0)+(a.suburb?4:0);
+      const scoreB = (b.phone?b.phone.length:0)+(b.website?8:0)+(b.email?6:0)+(b.suburb?4:0);
+      return scoreB-scoreA;
+    });
+  } catch(err){
+    console.warn('Overpass mirror failed ('+endpoint+'):', err);
+    throw err;
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 // AI writes all outreach emails in one batch (JSON array). Local models work.
