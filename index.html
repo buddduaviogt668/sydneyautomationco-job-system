@@ -12281,8 +12281,23 @@ const LEAD_SECTORS = [
   {id:'pm',      label:'🔧 Property Managers',         description:'Managing commercial properties needing system maintenance'},
   {id:'developer',label:'🏙 Property Developers',      description:'Developers doing premium residential or commercial projects'},
   {id:'enduser', label:'👤 End Users (Direct)',         description:'Building owners with existing Dynalite/C-Bus needing service'},
-  {id:'custom',  label:'✏ Custom Target...',           description:'Describe your own ideal client'},
+  {id:'custom',  label:'✏ Custom Target...',         description:'Describe your own ideal client'},
 ];
+
+// Sector → OpenStreetMap tags for finding REAL registered businesses
+// (shop/craft/office/tourism values as tagged on OSM)
+const LEAD_OSM_TAGS = {
+  elec:      [['shop','electrical'],['craft','electrician'],['office','electrical']],
+  builder:   [['office','construction_company'],['craft','builder'],['office','building']],
+  strata:    [['office','estate_agent'],['office','real_estate'],['office','management']],
+  hotel:     [['tourism','hotel'],['tourism','motel']],
+  retail:    [['shop','lighting'],['shop','interior_decoration'],['shop','furniture'],['shop','electronics']],
+  architect: [['office','architect'],['office','architecture']],
+  pm:        [['office','estate_agent'],['office','real_estate'],['office','property_management']],
+  developer: [['office','real_estate'],['office','construction_company'],['office','property_management']],
+  enduser:   [],
+  custom:    [],
+};
 
 const EMAIL_SEQUENCES = [
   {type:'intro',    label:'Introduction', daysAfter:0,  description:'First touch — who you are, what you do, why you'},
@@ -12293,9 +12308,19 @@ const EMAIL_SEQUENCES = [
 
 let _leadTab = 'hunt'; // 'hunt' | 'pipeline' | 'sequences' | 'settings'
 let _generating = false;
+let _leadSource = 'real'; // 'real' = OpenStreetMap businesses | 'ai' = AI-suggested
 let _leadGenResults = null; // {sector, targetDesc, leads:[], emails:[]}
 
 // ─── MAIN RENDER ─────────────────────────────────────────────────────────────
+let _leadFormSaved = null; // {sector, location, custom, count} preserved across re-renders
+function saveLeadForm(){
+  _leadFormSaved = {
+    sector:   document.getElementById('lead-sector')?.value,
+    location: document.getElementById('lead-location')?.value,
+    custom:   document.getElementById('lead-custom')?.value,
+    count:    document.getElementById('lead-count')?.value,
+  };
+}
 function renderLeadEngine(){
   const active = leads.filter(l=>!['won','dead'].includes(l.status));
   const won    = leads.filter(l=>l.status==='won');
@@ -12333,9 +12358,15 @@ function _renderLeadHunt(){
       <div style="background:#fff;border:1px solid #e2e8f0;border-radius:14px;overflow:hidden">
         <div style="background:#0f172a;padding:14px 18px">
           <div style="font-size:14px;font-weight:800;color:#fff">Who do you want to reach?</div>
-          <div style="font-size:11px;color:#64748b;margin-top:3px">Pick a sector — AI does the rest</div>
+          <div style="font-size:11px;color:#64748b;margin-top:3px">Pick a sector — the engine finds real businesses</div>
         </div>
         <div style="padding:14px">
+          <!-- Source toggle -->
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:14px">
+            <button onclick="saveLeadForm();_leadSource='real';renderMain()" style="background:${_leadSource==='real'?'#0f172a':'#f1f5f9'};color:${_leadSource==='real'?'#fff':'#64748b'};border:1px solid ${_leadSource==='real'?'#0f172a':'#e2e8f0'};border-radius:8px;padding:9px 8px;font-size:12px;font-weight:700;cursor:pointer">🌐 Real Businesses</button>
+            <button onclick="saveLeadForm();_leadSource='ai';renderMain()" style="background:${_leadSource==='ai'?'#0f172a':'#f1f5f9'};color:${_leadSource==='ai'?'#fff':'#64748b'};border:1px solid ${_leadSource==='ai'?'#0f172a':'#e2e8f0'};border-radius:8px;padding:9px 8px;font-size:12px;font-weight:700;cursor:pointer">✦ AI Suggestions</button>
+          </div>
+          ${_leadSource==='real'?`<div style="background:#ecfdf5;border:1px solid #a7f3d0;border-radius:8px;padding:9px 11px;font-size:11px;color:#047857;margin-bottom:12px">✓ Real, registered businesses pulled live from OpenStreetMap — names, addresses, phones & websites. AI only writes the emails.</div>`:''}
           ${LEAD_SECTORS.map(s=>`
             <div onclick="document.getElementById('lead-sector').value='${s.id}';document.querySelectorAll('.lead-sector-card').forEach(x=>x.style.borderColor='#e2e8f0');this.style.borderColor='#6366f1'"
               class="lead-sector-card"
@@ -12344,32 +12375,32 @@ function _renderLeadHunt(){
               <div style="font-size:13px;font-weight:700;color:#0f172a">${s.label}</div>
               <div style="font-size:11px;color:#94a3b8;margin-top:2px">${s.description}</div>
             </div>`).join('')}
-          <input type="hidden" id="lead-sector" value="elec">
+          <input type="hidden" id="lead-sector" value="${_leadFormSaved?.sector||'elec'}">
 
           <!-- Custom description -->
           <div style="margin-top:10px">
             <label style="font-size:11px;font-weight:700;color:#64748b;text-transform:uppercase;display:block;margin-bottom:5px">Target Location / Detail</label>
-            <input id="lead-location" value="Sydney NSW" placeholder="e.g. Sydney CBD, Inner West, Sutherland Shire" style="width:100%;padding:10px;border:1px solid #e2e8f0;border-radius:8px;font-size:13px;font-family:'DM Sans',sans-serif;box-sizing:border-box">
+            <input id="lead-location" value="${_leadFormSaved?.location||'Sydney NSW'}" placeholder="e.g. Sydney CBD, Inner West, Sutherland Shire" style="width:100%;padding:10px;border:1px solid #e2e8f0;border-radius:8px;font-size:13px;font-family:'DM Sans',sans-serif;box-sizing:border-box">
           </div>
 
           <div style="margin-top:10px">
             <label style="font-size:11px;font-weight:700;color:#64748b;text-transform:uppercase;display:block;margin-bottom:5px">Specific target (optional)</label>
-            <textarea id="lead-custom" rows="2" placeholder="e.g. electricians specialising in hotel fit-outs, strata managers with 50+ units, builders doing office refurbs..." style="width:100%;padding:10px;border:1px solid #e2e8f0;border-radius:8px;font-size:12px;font-family:'DM Sans',sans-serif;resize:vertical;box-sizing:border-box"></textarea>
+            <textarea id="lead-custom" rows="2" placeholder="e.g. electricians specialising in hotel fit-outs, strata managers with 50+ units, builders doing office refurbs..." style="width:100%;padding:10px;border:1px solid #e2e8f0;border-radius:8px;font-size:12px;font-family:'DM Sans',sans-serif;resize:vertical;box-sizing:border-box">${_leadFormSaved?.custom||''}</textarea>
           </div>
 
           <div style="margin-top:10px">
             <label style="font-size:11px;font-weight:700;color:#64748b;text-transform:uppercase;display:block;margin-bottom:5px">How many leads to generate</label>
             <select id="lead-count" style="width:100%;padding:9px;border:1px solid #e2e8f0;border-radius:8px;font-size:13px;font-family:'DM Sans',sans-serif;background:#fff">
-              <option value="3">3 leads + emails (quick)</option>
-              <option value="5" selected>5 leads + emails</option>
-              <option value="10">10 leads + emails (deep run)</option>
+              <option value="3"${(_leadFormSaved?.count||'5')==='3'?' selected':''}>3 leads + emails (quick)</option>
+              <option value="5"${(_leadFormSaved?.count||'5')==='5'?' selected':''}>5 leads + emails</option>
+              <option value="10"${(_leadFormSaved?.count||'5')==='10'?' selected':''}>10 leads + emails (deep run)</option>
             </select>
           </div>
 
           <button onclick="runLeadGeneration()" ${_generating?'disabled':''} style="width:100%;margin-top:14px;background:${_generating?'#94a3b8':'#6366f1'};color:#fff;border:none;border-radius:10px;padding:14px;font-size:14px;font-weight:800;cursor:${_generating?'not-allowed':'pointer'}">
-            ${_generating?'⏳ Researching...':'✦ Generate Leads + Emails'}
+            ${_generating?'⏳ Finding real businesses...':(_leadSource==='real'?'🔎 Find Real Businesses + Emails':'✦ Generate Leads + Emails')}
           </button>
-          ${_generating?`<div style="text-align:center;margin-top:8px;font-size:11px;color:#94a3b8">Gemini is researching targets and writing personalised emails...</div>`:''}
+          ${_generating?`<div style="text-align:center;margin-top:8px;font-size:11px;color:#94a3b8">${_leadSource==='real'?'Searching OpenStreetMap for real companies in your area — AI writes personalised emails...':'Gemini is researching targets and writing personalised emails...'}</div>`:''}
         </div>
       </div>
     </div>
@@ -12382,7 +12413,7 @@ function _renderLeadHunt(){
           <div style="font-size:18px;font-weight:800;color:#0f172a;margin-bottom:8px">Ready to find work</div>
           <div style="font-size:14px;color:#64748b;max-width:400px;margin:0 auto;line-height:1.6">
             Pick a target sector, set your location, and hit Generate.<br>
-            Gemini will research real companies and write personalised outreach emails in your voice — ready to send.
+            ${_leadSource==='real'?'The engine pulls real registered businesses from OpenStreetMap and writes personalised outreach emails in your voice — ready to send.':'AI researches target companies and writes personalised outreach emails in your voice — ready to send.'}
           </div>
           <div style="margin-top:20px;display:flex;gap:10px;justify-content:center;flex-wrap:wrap">
             ${['Electrical contractors Sydney','Hotels needing lighting upgrades','Strata managers Sutherland Shire','Builders doing CBD fit-outs'].map(hint=>`
@@ -12400,7 +12431,9 @@ function _renderLeadResults(){
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">
       <div>
         <div style="font-size:15px;font-weight:800;color:#0f172a">${r.leads.length} leads generated for: ${esc(r.targetDesc)}</div>
-        <div style="font-size:12px;color:#64748b;margin-top:2px">⚠ AI-suggested targets — verify company details before contacting. Emails/phones left blank where unconfirmed.</div>
+        <div style="font-size:12px;color:#64748b;margin-top:2px">${r.source==='real'
+          ? '<span style="color:#047857">✓ Real businesses pulled from OpenStreetMap — names & contacts from live map data. AI wrote the emails.</span>'
+          : '⚠ AI-suggested targets — verify company details before contacting. Emails/phones left blank where unconfirmed.'}</div>
       </div>
       <div style="display:flex;gap:8px">
         <button onclick="addAllLeadsToDb()" style="background:#10b981;color:#fff;border:none;border-radius:8px;padding:8px 16px;font-size:13px;font-weight:700;cursor:pointer">+ Save All to Pipeline</button>
@@ -12415,10 +12448,11 @@ function _renderLeadResults(){
         <div style="background:#f8fafc;padding:12px 16px;display:flex;align-items:center;gap:12px;border-bottom:1px solid #e2e8f0">
           <div style="width:36px;height:36px;background:#6366f1;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:16px;font-weight:800;color:#fff;flex-shrink:0">${i+1}</div>
           <div style="flex:1">
-            <div style="font-size:14px;font-weight:800;color:#0f172a">${esc(lead.company)}</div>
+            <div style="font-size:14px;font-weight:800;color:#0f172a">${esc(lead.company)}${lead.source==='osm'?` <span style="font-size:9px;background:#ecfdf5;color:#047857;border:1px solid #a7f3d0;border-radius:10px;padding:1px 7px;font-weight:700;vertical-align:2px">✓ REAL</span>`:''}</div>
             <div style="font-size:12px;color:#64748b">${esc(lead.contact||'Contact TBC')} · ${esc(lead.suburb||'')} · ${esc(lead.sector||'')}</div>
           </div>
           <div style="display:flex;gap:6px">
+            ${lead.website?`<a href="${esc(lead.website)}" target="_blank" rel="noopener" style="background:#0ea5e9;color:#fff;border:none;border-radius:7px;padding:6px 12px;font-size:12px;font-weight:700;text-decoration:none">🌐 Site</a>`:''}
             ${lead.email?`<a href="mailto:${lead.email}?subject=${encodeURIComponent(email.subject)}&body=${encodeURIComponent(email.body)}" style="background:#0f172a;color:#fff;border:none;border-radius:7px;padding:6px 14px;font-size:12px;font-weight:700;text-decoration:none;display:flex;align-items:center;gap:5px">✉ Open in Email</a>`:''}
             ${lead.phone?`<a href="tel:${lead.phone}" style="background:#10b981;color:#fff;border:none;border-radius:7px;padding:6px 14px;font-size:12px;font-weight:700;text-decoration:none">📞 Call</a>`:''}
             <button onclick="addLeadToDb(${i})" style="background:#6366f1;color:#fff;border:none;border-radius:7px;padding:6px 14px;font-size:12px;font-weight:700;cursor:pointer">+ Pipeline</button>
@@ -12601,6 +12635,7 @@ function _renderLeadSettings(){
 
 // ─── LEAD GENERATION ENGINE ───────────────────────────────────────────────────
 async function runLeadGeneration(){
+  if(_leadSource==='real') return runRealLeadGeneration();
   const key = getActiveKey();
   if(!key){ showToast('Set your API key in Settings → AI Configuration first', 'warn'); goto('settings'); return; }
 
@@ -12709,6 +12744,190 @@ Return ONLY a JSON array. No markdown, no explanation. Format:
   renderMain();
 }
 
+// ─── REAL BUSINESS ENGINE (OpenStreetMap / Overpass) ─────────────────────────
+// Pulls real, registered businesses live from OSM. AI only writes the emails.
+async function runRealLeadGeneration(){
+  const sectorId = document.getElementById('lead-sector')?.value||'elec';
+  const location = (document.getElementById('lead-location')?.value||'Sydney NSW').trim();
+  const custom   = (document.getElementById('lead-custom')?.value||'').trim();
+  const count    = parseInt(document.getElementById('lead-count')?.value||'5');
+  const profile  = STORE.get('leadProfile')||{};
+  const sector   = LEAD_SECTORS.find(s=>s.id===sectorId)||LEAD_SECTORS[0];
+
+  // Custom target descriptions have no OSM tag mapping — fall back to AI mode
+  const tags = LEAD_OSM_TAGS[sector.id]||[];
+  if(!tags.length){
+    _leadSource='ai';
+    renderMain();
+    showToast('No map category for that target — switched to AI mode', 'warn');
+    return runLeadGeneration();
+  }
+
+  const targetDesc = custom || (sector.label.replace(/[^a-zA-Z ]/g,'').trim() + ' in ' + location);
+
+  _generating = true;
+  _leadGenResults = null;
+  renderMain();
+
+  try {
+    const businesses = await searchOsmBusinesses(tags, location, Math.max(count*2, 12));
+    if(!businesses.length) throw new Error('No businesses found in "'+location+'" — try a nearby suburb or switch to AI mode');
+
+    // Keep only the strongest results, dedupe by name
+    const seen = new Set();
+    const picks = businesses.filter(b=>{
+      const k = (b.name||'').toLowerCase();
+      if(seen.has(k)) return false;
+      seen.add(k); return true;
+    }).slice(0, count);
+
+    const leads = picks.map(b=>({
+      company: b.name,
+      contact: b.contact||'',
+      email:   b.email||'',
+      phone:   b.phone||'',
+      suburb:  b.suburb||location,
+      sector:  sector.label,
+      why:     b.why||'Real '+sector.label.replace(/^[^a-zA-Z]+/,'')+' operating in '+location,
+      value:   Number(b.value)||4000,
+      website: b.website||'',
+      source:  'osm', // verified real business
+    }));
+
+    // AI writes the emails (best effort — generic fallback if no key/failure)
+    let emails = [];
+    try {
+      emails = await aiWriteLeadEmails(leads, profile, sector);
+    } catch(e){
+      console.warn('AI email write failed, using template:', e);
+      emails = leads.map(l=>({ subject:'Lighting control specialist — '+l.company, body:templateLeadEmail(l, profile) }));
+    }
+
+    _leadGenResults = {
+      targetDesc,
+      source: 'real',
+      leads,
+      emails: leads.map((l,i)=>({ subject:(emails[i]||{}).subject||'Lighting control specialist — '+l.company, body:(emails[i]||{}).body||templateLeadEmail(l, profile) })),
+    };
+
+    showToast(`✓ ${leads.length} real businesses found (${businesses.length} matches)`, 'success');
+  } catch(e){
+    showToast('Real lead search failed: '+e.message, 'error');
+    console.error('Real lead gen error:', e);
+  }
+
+  _generating = false;
+  renderMain();
+}
+
+// Query Overpass (OpenStreetMap) for real businesses by tag within a location radius
+async function searchOsmBusinesses(tags, location, limit){
+  // 1) Geocode the location to a rough bounding box (Nominatim, free)
+  let bbox = null;
+  try {
+    const gj = await fetch('https://nominatim.openstreetmap.org/search?format=json&limit=1&q='+encodeURIComponent(location+' Australia'))
+      .then(r=>r.json());
+    if(gj && gj[0] && gj[0].boundingbox){
+      const [s,n,w,e] = gj[0].boundingbox.map(Number);
+      bbox = [s,w,n,e].join(',');
+    }
+  } catch(err){ console.warn('Geocode failed:', err); }
+  if(!bbox){
+    // Fall back to a fixed Sydney metro box (~70km)
+    bbox = '-34.10,150.70,-33.50,151.35';
+  }
+
+  // 2) Build the Overpass query for node+way+relation
+  const clauses = tags.map(([k,v])=>
+    `node["${k}"="${v}"](${bbox});way["${k}"="${v}"](${bbox});relation["${k}"="${v}"](${bbox});`
+  ).join('');
+  const query = `[out:json][timeout:35];(${clauses});out center tags 120;`;
+
+  const res = await fetch('https://overpass-api.de/api/interpreter', {
+    method:'POST',
+    headers:{'Content-Type':'application/x-www-form-urlencoded'},
+    body:'data='+encodeURIComponent(query),
+  });
+  if(!res.ok) throw new Error('Map data error ('+res.status+')');
+  const data = await res.json();
+
+  const out = [];
+  (data.elements||[]).forEach(el=>{
+    const t = el.tags||{};
+    const name = t.name || t['name:en'] || '';
+    if(!name || t.amenity==='street_lighting') return;
+    out.push({
+      name,
+      contact: t['contact:name']||t.contact_person||'',
+      phone:   t['contact:phone']||t.phone||'',
+      email:   t['contact:email']||t.email||'',
+      website: t['contact:website']||t.website||'',
+      suburb:  t['addr:suburb']||t['addr:city']||t['addr:district']||'',
+      why:     t['shop']?('Operates as a '+t['shop']+' business'):(t['office']?('Operates as a '+t['office']+' firm'):(t['tourism']?('Operates as a '+t['tourism']+' venue'):'')),
+      value:   3000 + Math.round(Math.random()*4000),
+    });
+  });
+
+  // Rank: prefer entries with phone/website/address, then named
+  return out.sort((a,b)=>{
+    const scoreA = (a.phone?a.phone.length:0)+(a.website?8:0)+(a.email?6:0)+(a.suburb?4:0);
+    const scoreB = (b.phone?b.phone.length:0)+(b.website?8:0)+(b.email?6:0)+(b.suburb?4:0);
+    return scoreB-scoreA;
+  }).slice(0, limit);
+}
+
+// AI writes all outreach emails in one batch (JSON array). Local models work.
+async function aiWriteLeadEmails(leads, profile, sector){
+  const list = leads.map((l,i)=>`${i+1}. ${l.company} — ${l.suburb||'location'} (${l.why||'potential client'})`).join('\n');
+  const prompt = `Write cold outreach emails for the ${leads.length} REAL businesses below.
+
+George's business: ${profile.spec||'C-Bus and Dynalite commissioning and programming specialist, Menai Sydney. Fast, reliable, 15+ years.'}
+Target businesses:
+${list}
+
+Rules for every email:
+- From: George, Sydney Automation Co, 0422 469 739, service@sydneyautomationco.com.au
+- Max 130 words
+- First line must reference the specific business type
+- Clear call to action
+- Tone: ${profile.tone||'direct'}
+- End with natural unsubscribe line: "If this isn't relevant, just reply and I'll leave you alone."
+
+Return ONLY a JSON array with one object per business in the SAME order:
+[{"subject":"...","body":"..."}]
+No markdown, no commentary.`;
+
+  const raw = await aiCallRaw(prompt, '', 3000);
+  const clean = raw.replace(/```json|```/g,'').trim();
+  let arr;
+  try { arr = JSON.parse(clean); }
+  catch(e){
+    const match = raw.match(/\[[\s\S]*\]/);
+    if(match) arr = JSON.parse(match[0]);
+    else throw new Error('Could not parse AI emails');
+  }
+  if(!Array.isArray(arr)) throw new Error('AI did not return an array');
+  return arr.map(o=>({ subject:o.subject||'', body:o.body||'' }));
+}
+
+// Generic fallback email when AI is unavailable
+function templateLeadEmail(lead, profile){
+  const sector = (lead.why||'lighting control projects').toLowerCase();
+  return `Hi ${lead.contact||'there'},
+
+I'm George from Sydney Automation Co — a C-Bus and Dynalite commissioning specialist based in Menai, Sydney.
+
+${lead.company} looks like a business I could genuinely help with ${sector}. I do clean, fast programming and work around electricians' and builders' schedules — no lock-in, you keep full access to the system.
+
+If you've got a lighting control project coming up, I'd love a quick 15-minute chat.
+
+George Skarmoutsos
+Sydney Automation Co.
+0422 469 739 · service@sydneyautomationco.com.au
+
+If this isn't relevant, just reply and I'll leave you alone.`;
+}
+
 // ─── ADD LEADS TO DB ─────────────────────────────────────────────────────────
 function addLeadToDb(idx){
   if(!_leadGenResults) return;
@@ -12718,7 +12937,8 @@ function addLeadToDb(idx){
   leads.push({
     id, ...lead,
     status: 'new',
-    source: 'ai-generated',
+    source: lead.source||'ai-generated',
+    website: lead.website||'',
     emailsSent: [],
     createdAt: today(),
     lastActivity: today(),
@@ -12793,7 +13013,8 @@ function copyEmailToClipboard(idx){
 
 async function regenerateEmail(idx){
   const key = getActiveKey();
-  if(!key||!_leadGenResults) return;
+  const localEndpoint = getAIProvider()==='openai' && /(localhost|127\.0\.0\.1|11434|lmstudio)/i.test(currentEndpoint());
+  if((!key&&!localEndpoint)||!_leadGenResults) return;
   const lead = _leadGenResults.leads[idx];
   const profile = STORE.get('leadProfile')||{};
   showToast('Rewriting email...', 'info');
@@ -12813,7 +13034,8 @@ Return ONLY the email body (no subject line, no JSON, just the text).`;
 
 async function generateFollowUpEmail(leadId){
   const key = getActiveKey();
-  if(!key){ showToast('Set your API key in Settings → AI Configuration','warn'); return; }
+  const localEndpoint = getAIProvider()==='openai' && /(localhost|127\.0\.0\.1|11434|lmstudio)/i.test(currentEndpoint());
+  if(!key&&!localEndpoint){ showToast('Set your API key in Settings → AI Configuration','warn'); return; }
   const l = leads.find(x=>x.id===leadId);
   if(!l) return;
   const profile = STORE.get('leadProfile')||{};
