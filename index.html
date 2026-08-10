@@ -2494,9 +2494,11 @@ function jobRevenue(j) {
   if (j.status !== 'paid') return 0;
   const dep = Math.max(0, Number(j.depositAmount) || 0);
   const inv = Math.max(0, Number(j.invoiceAmount) || 0);
-  const quote = Math.max(0, Number(j.quoteAmount) || 0);
   const collected = dep + inv;
-  return collected > 0 ? Math.min(collected, quote) : quote;
+  // Revenue = money actually collected (deposit + invoice). No cap at the quote:
+  // quotes can be stale/lower than the final invoice (e.g. GST), so capping
+  // understates revenue. Deposit + balance records sum to their quote naturally.
+  return collected > 0 ? collected : Math.max(0, Number(j.quoteAmount) || 0);
 }
 
 // ─── JOB OUTSTANDING HELPER ──────────────────────────────────────────────────
