@@ -14772,12 +14772,22 @@ function renderSettings(){
         <div style="display:flex;gap:10px;align-items:center;margin-bottom:8px">
           <input id="cfg-geminiKey" type="password" value="${getActiveKey()}" placeholder="${{'gemini':'AIzaSy...','groq':'gsk_...','openai':'sk-...'}[getAIProvider()]||'API key...'}" style="flex:1;padding:10px 12px;border:1px solid #334155;border-radius:8px;font-size:13px;color:#e2e8f0;background:#1e293b;font-family:monospace" oninput="(function(v){if(v.startsWith('gsk_')){saveAIProvider('groq');}else if(v.startsWith('AIza')){saveAIProvider('gemini');}else if(v.startsWith('sk-')){saveAIProvider('openai');}})(this.value)">
           <button onclick="(()=>{const k=document.getElementById('cfg-geminiKey');k.type=k.type==='password'?'text':'password'})()" style="background:#1e293b;border:1px solid #334155;border-radius:8px;color:#94a3b8;padding:10px 14px;font-size:13px;cursor:pointer">Show</button>
-          <button onclick="(function(){const k=document.getElementById('cfg-geminiKey').value.trim();if(!k){alert('Paste your API key first');return;}if(k.startsWith('gsk_'))saveAIProvider('groq');else if(k.startsWith('AIza'))saveAIProvider('gemini');else if(k.startsWith('sk-'))saveAIProvider('openai');saveAPIKey(k);testAPIKey();})()" style="background:#4285f4;border:none;border-radius:8px;color:#fff;padding:10px 16px;font-size:13px;font-weight:700;cursor:pointer">Save + Test</button>
+          <button onclick="(function(){const k=document.getElementById('cfg-geminiKey').value.trim();if(!k){if(getAIProvider()==='openai'&&/(localhost|127\.0\.0\.1|11434|lmstudio)/i.test(STORE.get('aiEndpoint')||'')){saveAPIKey(k);testAPIKey();}else{alert('Paste your API key first');}}else{if(k.startsWith('gsk_'))saveAIProvider('groq');else if(k.startsWith('AIza'))saveAIProvider('gemini');else if(k.startsWith('sk-'))saveAIProvider('openai');saveAPIKey(k);testAPIKey();}})()" style="background:#4285f4;border:none;border-radius:8px;color:#fff;padding:10px 16px;font-size:13px;font-weight:700;cursor:pointer">Save + Test</button>
         </div>
         <div id="api-key-status" style="font-size:12px;margin-bottom:12px">${getActiveKey() ? '<span style="color:#4ade80">&#10003; Key set &mdash; AI active ('+getAIProvider()+')</span>' : '<span style="color:#f87171">&#9888; No key &mdash; AI disabled</span>'}</div>
+        ${getAIProvider()==='openai'?`
+        <div style="background:#0a1f33;border:1px solid #1e3a5f;border-radius:8px;padding:12px;margin-bottom:12px">
+          <div style="font-size:11px;font-weight:700;color:#94a3b8;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:8px">Custom Endpoint (LM Studio, Ollama, Together.ai...)</div>
+          <label style="display:block;font-size:11px;font-weight:700;color:#94a3b8;margin-bottom:5px">API Endpoint</label>
+          <input id="cfg-aiEndpoint" type="text" value="${STORE.get('aiEndpoint')||'http://localhost:11434/v1/chat/completions'}" placeholder="http://localhost:11434/v1/chat/completions" style="width:100%;padding:10px 12px;border:1px solid #334155;border-radius:8px;font-size:13px;color:#e2e8f0;background:#1e293b;font-family:monospace;margin-bottom:8px">
+          <label style="display:block;font-size:11px;font-weight:700;color:#94a3b8;margin-bottom:5px">Model</label>
+          <input id="cfg-aiModel" type="text" value="${STORE.get('aiModel')||''}" placeholder="deepseek-r1:8b" style="width:100%;padding:10px 12px;border:1px solid #334155;border-radius:8px;font-size:13px;color:#e2e8f0;background:#1e293b;font-family:monospace">
+          <div style="font-size:11px;color:#64748b;margin-top:8px">Using free local Ollama? Install &rarr; <span style="color:#818cf8">ollama.com</span>, then <span style="color:#818cf8">ollama pull deepseek-r1:8b</span> &mdash; works with any key in the box above, leave default endpoint &amp; model.</div>
+        </div>`:''}
         <div style="background:#1e293b;border-radius:8px;padding:12px;font-size:12px;color:#64748b">
           <strong style="color:#94a3b8">Gemini:</strong> <a href="https://aistudio.google.com" target="_blank" style="color:#818cf8">aistudio.google.com</a> → Get API Key (upgrade for ~$0.01/day) &nbsp;|&nbsp;
-          <strong style="color:#94a3b8">Groq (FREE):</strong> <a href="https://console.groq.com" target="_blank" style="color:#818cf8">console.groq.com</a> → API Keys
+          <strong style="color:#94a3b8">Groq (FREE):</strong> <a href="https://console.groq.com" target="_blank" style="color:#818cf8">console.groq.com</a> → API Keys &nbsp;|&nbsp;
+          <strong style="color:#94a3b8">Ollama (FREE, local):</strong> <a href="https://ollama.com" target="_blank" style="color:#818cf8">ollama.com</a> — select "OpenAI / Custom"
         </div>
       </div>
     </div>
@@ -14796,6 +14806,12 @@ function settingsSave(){
   // Save API key
   const newKey = g('cfg-anthropicKey');
   if(newKey !== null) saveAPIKey(newKey);
+
+  // Save AI endpoint + model (OpenAI-compatible / Ollama)
+  const ep = g('cfg-aiEndpoint');
+  if(ep !== null && ep.trim()) STORE.set('aiEndpoint', ep.trim());
+  const m = g('cfg-aiModel');
+  if(m !== null && m.trim()) STORE.set('aiModel', m.trim());
 
   // Save integration keys
   const intKeys = ['hubspotToken','stripePaymentLinkBase','googleReviewUrl','twilioSid','twilioToken','twilioFrom','xeroEmail','websiteLeadsUrl','websiteLeadsToken'];
@@ -17816,7 +17832,8 @@ function saveAIProvider(p){ STORE.set('aiProvider', p); }
 async function aiCallRaw(prompt, systemPrompt='', maxTokens=1500){
   const key      = getActiveKey();
   const provider = getAIProvider();
-  if(!key) throw new Error('No API key set — go to Settings → AI Configuration');
+  const isLocalEndpoint = provider==='openai' && /(localhost|127\.0\.0\.1|11434|lmstudio)/i.test(STORE.get('aiEndpoint')||'');
+  if(!key && !isLocalEndpoint) throw new Error('No API key set — go to Settings → AI Configuration');
 
   if(provider === 'groq'){
     // Groq — OpenAI-compatible, very fast, free tier generous
@@ -17850,7 +17867,7 @@ async function aiCallRaw(prompt, systemPrompt='', maxTokens=1500){
     messages.push({role:'user', content:prompt});
     const resp = await fetch(endpoint, {
       method:'POST',
-      headers:{'Content-Type':'application/json','Authorization':'Bearer '+key},
+      headers:{'Content-Type':'application/json','Authorization':'Bearer '+(key||'local')},
       body: JSON.stringify({
         model: STORE.get('aiModel') || 'gpt-4o-mini',
         messages, max_tokens: maxTokens,
@@ -17901,7 +17918,8 @@ async function testAPIKey(){
   const keyInput = document.getElementById('cfg-geminiKey');
   const statusEl = document.getElementById('api-key-status');
   const key = keyInput ? keyInput.value.trim() : '';
-  if(!key){ if(statusEl) statusEl.innerHTML='<span style="color:#f87171">No key entered</span>'; return; }
+  const localEndpoint = getAIProvider()==='openai' && /(localhost|127\.0\.0\.1|11434|lmstudio)/i.test(STORE.get('aiEndpoint')||'');
+  if(!key && !localEndpoint){ if(statusEl) statusEl.innerHTML='<span style="color:#f87171">No key entered</span>'; return; }
   if(statusEl) statusEl.innerHTML='<span style="color:#94a3b8">Testing key...</span>';
   try {
     const result = await aiCallRaw('Reply with just the word: OK', '', 10);
@@ -17916,7 +17934,8 @@ async function testAPIKey(){
 
 async function aiCall(userMessage){
   const key = getActiveKey();
-  if(!key){ showAPIKeyPrompt(); throw new Error('No API key — go to Settings → AI Configuration.'); }
+  const localEndpoint = getAIProvider()==='openai' && /(localhost|127\.0\.0\.1|11434|lmstudio)/i.test(STORE.get('aiEndpoint')||'');
+  if(!key && !localEndpoint){ showAPIKeyPrompt(); throw new Error('No API key — go to Settings → AI Configuration.'); }
   try {
     const context = buildAIContext();
     const historyText = aiHistory.slice(-6).map(function(m){ return (m.role==='user'?'User: ':'Assistant: ')+m.content; }).join('\n\n');
