@@ -1266,6 +1266,7 @@ let expenses = STORE.get('expenses') || [];
 let taxManual= STORE.get('taxman')  || {cashIncome:0,toolsOver300:0,phonePct:80,homeHrsWk:5,bizWeeks:12,hecs:0,accountantFee:0,bankFees:0,otherDeductions:0};
 let jobs     = STORE.get('jobs')    || [];
 let counters = STORE.get('counters')|| {SAI:100045,SAQ:10144,SAO:1001,PRJ:1};
+let _jobGroupCache = null;
 
 // ─── MIGRATION: Fix old "not registered for GST" text in stored jobs ──────────
 let _jobsDirty = false;
@@ -1497,6 +1498,7 @@ function restoreFromData(data) {
   if (data.projects) { projects  = data.projects;  STORE.set('projects',  projects); }
   if (data.leads)    { leads     = data.leads;     STORE.set('leads',     leads); }
   if (data.jobs)     {
+    _jobGroupCache = null;
     // Extract and restore job attachment binaries back to localStorage
     jobs = data.jobs.map(j => {
       if (!(j.attachments || []).length) return j;
@@ -1591,7 +1593,7 @@ function _syncCounters(){
 function _applySbData(sbData){
   if(!sbData) return;
   if (sbData.clients)   { clients   = sbData.clients;   localStorage.setItem('sac:clients',   JSON.stringify(clients)); }
-  if (sbData.jobs)      { jobs      = sbData.jobs;       localStorage.setItem('sac:jobs',      JSON.stringify(jobs)); }
+  if (sbData.jobs)      { _jobGroupCache = null; jobs      = sbData.jobs;       localStorage.setItem('sac:jobs',      JSON.stringify(jobs)); }
   if (sbData.leads)     { leads     = sbData.leads;      localStorage.setItem('sac:leads',     JSON.stringify(leads)); }
   if (sbData.counters)  { counters  = sbData.counters;   localStorage.setItem('sac:counters',  JSON.stringify(counters)); }
   if (sbData.kmlog)     { kmLog     = sbData.kmlog;      localStorage.setItem('sac:kmlog',     JSON.stringify(kmLog)); }
@@ -2529,6 +2531,45 @@ function jobCost(j) {
     },0);
   }
   return 0;
+}
+
+// ─── JOB GROUPING HELPER (deposit + balance = one physical job) ──────────────
+// Deposit invoices are raised against the main job and logged in that job's
+// activityLog as "Deposit invoice raised: SAI_xxxxx". The deposit SAI can also
+// exist as its own job record. This helper detects those pairs so reports can
+// treat them as ONE job (revenue = deposit + balance, costs deducted once)
+// instead of two unrelated rows where the deposit shows no parts cost.
+function _buildJobGroups(){
+  if(_jobGroupCache) return _jobGroupCache;
+  const byNum = {};
+  jobs.forEach(j=>{ if(j.jobNumber) byNum[j.jobNumber] = j; });
+  const groups = {};
+  const memberOf = {};
+  jobs.forEach(j=>{
+    const log = (j.activityLog||[]).map(l=>l.msg||l||'').join(' ');
+    const m = log.match(/Deposit invoice raised:\s*(SA[IQ][A-Z0-9_]*)/i);
+    if(!m) return;
+    const dep = byNum[m[1].toUpperCase()];
+    if(!dep || dep.id === j.id) return;
+    const gid = 'grp_'+[j.id,dep.id].sort().join('_');
+    groups[gid] = [j.id, dep.id];
+    memberOf[j.id] = gid; memberOf[dep.id] = gid;
+  });
+  _jobGroupCache = {groups, memberOf};
+  return _jobGroupCache;
+}
+function jobGroupOf(j){
+  const built = _buildJobGroups();
+  const gid = built.memberOf[j.id];
+  if(!gid) return [j];
+  return built.groups[gid].map(id=>jobs.find(x=>x.id===id)).filter(Boolean);
+}
+function jobGroupRevenue(j){ return jobGroupOf(j).reduce((s,x)=>s+jobRevenue(x),0); }
+function jobGroupCost(j){ return jobGroupOf(j).reduce((s,x)=>s+jobCost(x),0); }
+function jobGroupLabel(j){
+  const g = jobGroupOf(j);
+  if(g.length<2) return j.jobNumber||'';
+  return g.map(x=>x.jobNumber).filter(Boolean).join(' · ');
 }
 
 // ─── TOTAL COSTS HELPER (YTD / monthly) ──────────────────────────────────────
@@ -7418,6 +7459,14 @@ function printMonthlyReport(ms){
 function renderMonthlyReport(ms, forPrint){
   if(!ms) return '';
   const paidJobsM = jobs.filter(j=>j.status==='paid' && j.paidDate && j.paidDate.startsWith(ms));
+  // Job rows actually shown (deposit/balance pairs count once, in their completion month)
+  const shownPaidCount = (()=>{ const _seen={}; let _n=0;
+    for(const _j of paidJobsM){ const _g=jobGroupOf(_j); const _id=_g.map(x=>x.id).sort().join('|');
+      if(_g.length>1){ const _all=_g.every(x=>x.status==='paid'&&x.paidDate);
+        const _comp=_all?_g.reduce((mx,x)=>x.paidDate&&(!mx||x.paidDate>mx)?x.paidDate:mx,'').slice(0,7):'';
+        if(_comp!==ms||_seen[_id]) continue; _seen[_id]=true; _n++;
+      } else _n++;
+    } return _n; })();
   const revPaid = paidJobsM.reduce((s,j)=>s+jobRevenue(j),0);
   const invJobsM = jobs.filter(j=>['paid','invoiced','overdue'].includes(j.status) && (j.invoiceDate||'').startsWith(ms));
   const revInv = invJobsM.reduce((s,j)=>s+(Number(j.invoiceAmount)||Number(j.quoteAmount)||0),0);
@@ -7444,19 +7493,45 @@ function renderMonthlyReport(ms, forPrint){
   </div>`;
 
   const jobRows = paidJobsM.slice().sort((a,b)=>(b.paidDate||'').localeCompare(a.paidDate||''));
+  const _mSeen = {};
   const jobTable = jobRows.length ? `
     <div style="display:grid;grid-template-columns:90px 1fr 100px 110px 110px 90px;padding:9px 12px;background:#f8fafc;border-bottom:1px solid #e2e8f0;font-size:10px;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:.5px">
       <div>Job #</div><div>Client</div><div>Paid</div><div style="text-align:right">Revenue</div><div style="text-align:right">Cost</div><div style="text-align:right">Profit</div>
     </div>
     ${jobRows.map(j=>{
       const c=gc(j.clientId)||{};
+      const grp=jobGroupOf(j);
+      const grpId = grp.map(x=>x.id).sort().join('|');
+      // Deposit + balance pair: show ONE row in the month it was FULLY paid,
+      // with the job's full revenue and full cost (real profit — a deposit was
+      // taken to buy the parts, so the pair is one job, not a loss/small profit).
+      const allPaid = grp.length>1 && grp.every(x=>x.status==='paid' && x.paidDate);
+      if(allPaid){
+        const compMonth = grp.reduce((mx,x)=> (x.paidDate && (!mx || x.paidDate>mx)) ? x.paidDate : mx, '').slice(0,7);
+        if(compMonth !== ms) return '';
+        if(_mSeen[grpId]) return '';
+        _mSeen[grpId] = true;
+        const rev = grp.reduce((s,x)=>s+jobRevenue(x),0);
+        const cost = grp.reduce((s,x)=>s+jobCost(x),0);
+        const profit = rev-cost;
+        return `<div style="display:grid;grid-template-columns:90px 1fr 100px 110px 110px 90px;padding:11px 12px;border-bottom:1px solid #f8fafc;align-items:center" title="Deposit + balance invoices for the same physical job — shown here once fully paid with full revenue &amp; cost">
+          <div style="font-size:12px;font-family:'DM Mono',monospace;color:#1e3a5f;font-weight:600">${esc(grp.map(x=>x.jobNumber).filter(Boolean).join(' · '))} ⟳</div>
+          <div style="font-size:13px;color:#334155;font-weight:500">${esc(c.company||c.name||j.clientName||'')}</div>
+          <div style="font-size:12px;color:#64748b">${grp.map(x=>fmtD(x.paidDate)).join(' + ')}</div>
+          <div style="text-align:right;font-size:13px;font-weight:600;color:#0f172a">${fmt$(rev)}</div>
+          <div style="text-align:right;font-size:13px;color:#ef4444">${cost>0?('−'+fmt$(cost)):'—'}</div>
+          <div style="text-align:right;font-size:13px;font-weight:700;color:${profit>0?'#10b981':'#ef4444'}">${fmt$(profit)}</div>
+        </div>`;
+      }
+      // Individual job (or an incomplete deposit/balance pair): cash basis
+      const rev=jobRevenue(j);
       const cost=jobCost(j);
-      const profit=jobRevenue(j)-cost;
+      const profit=rev-cost;
       return `<div style="display:grid;grid-template-columns:90px 1fr 100px 110px 110px 90px;padding:11px 12px;border-bottom:1px solid #f8fafc;align-items:center">
         <div style="font-size:12px;font-family:'DM Mono',monospace;color:#1e3a5f;font-weight:600">${esc(j.jobNumber||'')}</div>
         <div style="font-size:13px;color:#334155;font-weight:500">${esc(c.company||c.name||j.clientName||'')}</div>
         <div style="font-size:12px;color:#64748b">${fmtD(j.paidDate)}</div>
-        <div style="text-align:right;font-size:13px;font-weight:600;color:#0f172a">${fmt$(jobRevenue(j))}</div>
+        <div style="text-align:right;font-size:13px;font-weight:600;color:#0f172a">${fmt$(rev)}</div>
         <div style="text-align:right;font-size:13px;color:#ef4444">${cost>0?('−'+fmt$(cost)):'—'}</div>
         <div style="text-align:right;font-size:13px;font-weight:700;color:${profit>0?'#10b981':'#ef4444'}">${fmt$(profit)}</div>
       </div>`;
@@ -7492,7 +7567,7 @@ function renderMonthlyReport(ms, forPrint){
     </div>
     <div style="padding:20px 24px">
       <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin-bottom:18px">
-        ${box('Cash Received (Paid)',fmt$(revPaid),paidJobsM.length+' job'+(paidJobsM.length===1?'':'s')+' paid','#1e3a5f')}
+        ${box('Cash Received (Paid)',fmt$(revPaid),shownPaidCount+' job'+(shownPaidCount===1?'':'s')+' paid','#1e3a5f')}
         ${box('Invoiced',fmt$(revInv),invJobsM.length+' invoice'+(invJobsM.length===1?'':'s'),'#3b82f6')}
         ${box('Supplier Costs',fmt$(supTotal),`parts ${fmt$(supParts)} · labour ${fmt$(supLab)}`,'#ef4444')}
         ${box('Est. Take-Home',fmt$(th),'after costs + overheads','#10b981')}
@@ -7592,16 +7667,26 @@ function renderFinancials(){
   const conversionRate=allQuotedEver.length>0?Math.round((wonJobs.length/allQuotedEver.length)*100):0;
 
   // ── JOB PROFITABILITY RANKING ──
-  const jobProfitRows=paidJobs.filter(j=>inFY(j.paidDate)&&jobRevenue(j)>0)
-    .map(j=>{
-      const rev=jobRevenue(j);
-      const supCost=jobCost(j);
-      const profit=rev-supCost;
-      const margin=rev>0?Math.round((profit/rev)*100):0;
-      const _cl=gc(j.clientId)||{};return {id:j.id,jobNumber:j.jobNumber||'',client:_cl.company||_cl.name||j.clientName||'',rev,supCost,profit,margin};
-    })
-    .sort((a,b)=>b.profit-a.profit)
-    .slice(0,10);
+  const jobProfitRows=(()=>{
+    const seen = new Set();
+    return paidJobs.filter(j=>inFY(j.paidDate)&&jobRevenue(j)>0)
+      .filter(j=>{
+        const key = jobGroupOf(j).map(x=>x.id).sort().join('|');
+        if(seen.has(key)) return false;
+        seen.add(key); return true;
+      })
+      .map(j=>{
+        const grp=jobGroupOf(j);
+        const rev=grp.reduce((s,x)=>s+jobRevenue(x),0);
+        const supCost=grp.reduce((s,x)=>s+jobCost(x),0);
+        const profit=rev-supCost;
+        const margin=rev>0?Math.round((profit/rev)*100):0;
+        const _cl=gc(j.clientId)||{};
+        return {id:j.id,jobNumber:grp.length>1?grp.map(x=>x.jobNumber).filter(Boolean).join(' · '):(j.jobNumber||''),client:_cl.company||_cl.name||j.clientName||'',rev,supCost,profit,margin,grouped:grp.length>1};
+      })
+      .sort((a,b)=>b.profit-a.profit)
+      .slice(0,10);
+  })();
 
   // ── BEST CLIENTS (YTD revenue by client) ──
   const clientRevMap={};
@@ -13375,10 +13460,9 @@ function renderProfitability(){
   const costPerHour   = annualCost > 0 ? annualCost / billableHrs : 0;
 
   const getJobCost = (j) => {
-    // Source 1: Bulletproofed jobCost helper (supplier invoices, actuals, or DB parts)
-    const partsCost = jobCost(j);
-
-    // Subcontractor labour from supplier invoices
+    // Source 1: Materials (parts) — actualPartsCost, else parts-only linked
+    // invoices, else DB parts list. Labour-type invoices are excluded here so
+    // subcontractor labour is NOT double-counted (it's added as subLabour below).
     const supInvs = (window._supInvoices||[]).filter(function(inv){
       if(!inv.supplier && inv.supplierName) inv.supplier = inv.supplierName;
       if(!inv.costType){
@@ -13387,6 +13471,21 @@ function renderProfitability(){
       }
       return inv.jobId === j.id || inv.jobRef === j.jobNumber;
     });
+    let partsCost = 0;
+    if (j.actualPartsCost != null && j.actualPartsCost !== '' && Number(j.actualPartsCost) > 0) {
+      partsCost = Number(j.actualPartsCost);
+    } else {
+      const partsInv = supInvs.filter(inv=>inv.costType!=='labour').reduce((s,inv)=>s+Number(inv.amount||0),0);
+      if (partsInv > 0) partsCost = partsInv;
+      else if ((j.parts||[]).length > 0) {
+        partsCost = (j.parts||[]).reduce((s,p)=>{
+          const dbp = PARTS_DB.find(x=>x.id===p.partId);
+          return s + (dbp ? dbp.buyPrice * (p.qty||1) : 0);
+        },0);
+      }
+    }
+
+    // Subcontractor labour from supplier invoices
     const subLabour = supInvs.filter(inv=>inv.costType==='labour').reduce((s,inv)=>s+Number(inv.amount||0),0);
     const supTotal  = partsCost + subLabour;
 
@@ -13410,13 +13509,21 @@ function renderProfitability(){
 
   const getJobCostTotal = (j) => getJobCost(j).total;
 
-  const jobData = paidJobs.map(j=>{
-    const revenue = jobRevenue(j);
-    const cost    = getJobCostTotal(j);
+  // Build one row per physical job — deposit + balance invoice pairs are grouped
+  const groupKeys = new Set();
+  const jobData = paidJobs.filter(j=>{
+    const key = jobGroupOf(j).map(x=>x.id).sort().join('|');
+    if(groupKeys.has(key)) return false;
+    groupKeys.add(key);
+    return true;
+  }).map(j=>{
+    const grp = jobGroupOf(j);
+    const revenue = grp.reduce((s,x)=>s+jobRevenue(x),0);
+    const cost    = grp.reduce((s,x)=>s+getJobCostTotal(x),0);
     const profit  = revenue - cost;
     const margin  = revenue>0 ? Math.round((profit/revenue)*100) : 0;
     const c       = gc(j.clientId)||{};
-    return {j, c, revenue, cost, profit, margin};
+    return {j, grp, c, revenue, cost, profit, margin};
   }).sort((a,b)=>b.profit-a.profit);
 
   const totalRevenue = jobData.reduce((s,d)=>s+d.revenue,0);
@@ -13537,10 +13644,10 @@ function renderProfitability(){
                 </div>`;
               });
             })() : jobData.map((d,i)=>`<div style="display:grid;grid-template-columns:80px 1fr 90px 80px 80px 70px;padding:10px 14px;border-bottom:1px solid #f1f5f9;align-items:center;cursor:pointer" onclick="openJobDetail('${d.j.id}')" onmouseover="this.style.background='#f8fafc'" onmouseout="this.style.background='transparent'">
-              <div style="font-size:11px;font-family:monospace;color:#1e3a5f;font-weight:600">${d.j.jobNumber}</div>
+              <div style="font-size:11px;font-family:monospace;color:#1e3a5f;font-weight:600">${esc(d.grp.length>1?d.grp.map(x=>x.jobNumber).filter(Boolean).join(' · '):d.j.jobNumber||'')}${d.grp.length>1?' ⟳':''}</div>
               <div style="font-size:13px;font-weight:600;color:#0f172a;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(d.c.company||'—')}</div>
               <div style="text-align:right;font-size:13px;font-weight:600;color:#0f172a">${fmt$(d.revenue)}</div>
-              <div style="text-align:right;font-size:12px;color:${d.cost>0?'#ef4444':'#94a3b8'}" title="${(()=>{const c=getJobCost(d.j);const parts=[];if(c.partsCost>0)parts.push('📦 Parts: '+fmt$(c.partsCost));if(c.subLabour>0)parts.push('🔧 Sub: '+fmt$(c.subLabour));if(c.expCost>0)parts.push('🧾 Expenses: '+fmt$(c.expCost));if(c.myLabourCost>0)parts.push('⏱ My time ('+c.hoursLogged+'h): '+fmt$(c.myLabourCost));const sinvs=(window._supInvoices||[]).filter(inv=>inv.jobId===d.j.id||inv.jobRef===d.j.jobNumber);if(sinvs.length>0)parts.push('Sources: '+sinvs.map(i=>(i.supplier||i.supplierName||'?').split(' ')[0]+' '+fmt$(i.amount)).join(', '));return parts.join(' · ')||'No costs logged — hover to see breakdown';})()}">${d.cost>0?fmt$(d.cost):'—'}</div>
+              <div style="text-align:right;font-size:12px;color:${d.cost>0?'#ef4444':'#94a3b8'}" title="${(()=>{const c={partsCost:0,subLabour:0,expCost:0,myLabourCost:0,hoursLogged:0};d.grp.forEach(x=>{const cc=getJobCost(x);c.partsCost+=cc.partsCost;c.subLabour+=cc.subLabour;c.expCost+=cc.expCost;c.myLabourCost+=cc.myLabourCost;c.hoursLogged+=cc.hoursLogged;});const parts=[];if(c.partsCost>0)parts.push('📦 Parts: '+fmt$(c.partsCost));if(c.subLabour>0)parts.push('🔧 Sub: '+fmt$(c.subLabour));if(c.expCost>0)parts.push('🧾 Expenses: '+fmt$(c.expCost));if(c.myLabourCost>0)parts.push('⏱ My time ('+c.hoursLogged+'h): '+fmt$(c.myLabourCost));const sinvs=(window._supInvoices||[]).filter(inv=>d.grp.some(x=>inv.jobId===x.id||inv.jobRef===x.jobNumber));if(sinvs.length>0)parts.push('Sources: '+sinvs.map(i=>(i.supplier||i.supplierName||'?').split(' ')[0]+' '+fmt$(i.amount)).join(', '));return parts.join(' · ')||'No costs logged — hover to see breakdown';})()}">${d.cost>0?fmt$(d.cost):'—'}</div>
               <div style="text-align:right;font-size:13px;font-weight:700;color:${d.profit>0?'#10b981':'#ef4444'}">${fmt$(d.profit)}</div>
               <div style="text-align:center">
                 <span style="background:${marginColor(d.margin)}20;color:${marginColor(d.margin)};border-radius:20px;padding:2px 8px;font-size:11px;font-weight:700">${d.margin}%</span>
