@@ -2502,15 +2502,17 @@ function jobRevenue(j) {
 }
 
 // ─── JOB AMOUNT HELPER (GST handling) ────────────────────────────────────────
-// Line items are entered GST-EXCLUSIVE. When an invoice is built from 2+ line
-// items, GST is added on top for the GST-INCLUSIVE amount. Single-line invoices
-// and ordinary amounts are treated as already-inclusive (unchanged).
+// Line items are entered GST-EXCLUSIVE. For a standalone line-item invoice (no
+// deposit split), GST is added on top for the GST-INCLUSIVE amount. Deposit-split
+// jobs (deposit + balance invoice) carry already-inclusive amounts and are unchanged.
 function jobAmountDisplay(j) {
   const rate = Number(CFG.gst) || 0.1;
   const gstOn = CFG.gstRegistered !== false;
-  if (j.invoiceLines && (j.invoiceLines.length || 0) >= 2) {
+  const hasLines = j.invoiceLines && (j.invoiceLines.length || 0) >= 1;
+  const splitDeposit = Number(j.depositAmount) > 0;
+  if (gstOn && hasLines && !splitDeposit) {
     const lt = j.invoiceLines.reduce((s, l) => s + ((Number(l.qty) || 0) * (Number(l.unit) || 0)), 0);
-    return gstOn ? lt * (1 + rate) : lt;
+    return lt * (1 + rate);
   }
   return Number(j.invoiceAmount || j.quoteAmount || 0);
 }
@@ -18935,11 +18937,12 @@ function generateQuotePDF(jobId){
 
 // ─── INVOICE LINE EDITOR ──────────────────────────────────────────────────────
 // All invoice PDFs go through this editor first. No more auto-guessing line items.
-// Invoice line items are GST-EXCLUSIVE; GST is added on top (for 2+ line items)
-// for the GST-INCLUSIVE total. Single-line invoices keep the entered amount.
+// Invoice line items are GST-EXCLUSIVE; GST is added on top for the GST-INCLUSIVE
+// total on standalone line-item invoices. Deposit-split invoices keep their amounts.
 function invLineTotalInc(job, lineTotal){
   if(CFG.gstRegistered === false) return lineTotal;
-  if(!job.invoiceLines || (job.invoiceLines.length || 0) < 2) return lineTotal;
+  if(!job.invoiceLines || (job.invoiceLines.length || 0) < 1) return lineTotal;
+  if(Number(job.depositAmount) > 0) return lineTotal;
   return lineTotal * (1 + (Number(CFG.gst)||0.1));
 }
 
@@ -19292,10 +19295,10 @@ function generateInvoicePDF(jobId, mode){
   const lineTotal = lines.reduce((s,l)=>s+(l.qty*l.unit),0);
   const _gst = Number(CFG.gst)||0.1;
   const _gstApplied = CFG.gstRegistered !== false;
-  // When the invoice has 2+ GST-EXCLUSIVE line items, GST is ADDED on top so the
-  // Total Due is the GST-INCLUSIVE price the client pays. Single-line invoices and
-  // the deposit line already carry a GST-INCLUSIVE total, so they are NOT inflated.
-  const _usingLines = !isDeposit && (j.invoiceLines && (j.invoiceLines.length || 0) >= 2);
+  // Standalone line-item invoices are GST-EXCLUSIVE, so GST is ADDED on top for the
+  // GST-INCLUSIVE Total Due. Deposit-split and single agreed-price invoices already
+  // carry GST-INCLUSIVE totals and are NOT inflated again.
+  const _usingLines = !isDeposit && (j.invoiceLines && (j.invoiceLines.length || 0) >= 1) && !(Number(j.depositAmount) > 0);
   let _subEx, _gstAmt, _totalInc;
   if (_usingLines) {
     _subEx = lineTotal;
