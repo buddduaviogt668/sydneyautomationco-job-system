@@ -1934,6 +1934,7 @@ const STATUS= {
   work_order:   {label:'Approved',       color:'#0ea5e9',bg:'#e0f2fe'},
   po_received:  {label:'Approved',       color:'#0ea5e9',bg:'#e0f2fe'},
   lost:         {label:'Lost',           color:'#94a3b8',bg:'#f1f5f9'},
+  written_off:  {label:'Written Off',    color:'#64748b',bg:'#f1f5f9'},
 };
 const NEXT = {
   lead:'booking', booking:'quoted', quoted:'approved',
@@ -3737,10 +3738,32 @@ function renderInvoices(){
             ${amountCell}
             <div style="font-size:13px;color:${od?'#ef4444':'#64748b'};font-weight:${od?700:400}">${fmtD(j.invoiceDue)}${od?' ⚠':''}</div>
             <div>${badge(STATUS[j.status])}</div>
-            <div style="display:flex;flex-direction:column;gap:4px">${['invoiced','overdue'].includes(j.status)?`<button onclick="markPaid('${j.id}')" style="background:#10b981;color:#fff;border:none;border-radius:6px;padding:5px 10px;font-size:11px;font-weight:600;cursor:pointer">✓ Paid</button><button onclick="openInvoiceLineEditor('${j.id}')" style="background:#1e3a5f;color:#fff;border:none;border-radius:6px;padding:5px 10px;font-size:11px;font-weight:600;cursor:pointer">📄 PDF</button><button onclick="sendWhatsApp('${j.id}','chase')" style="background:#fff7ed;border:1px solid #fed7aa;color:#9a3412;border-radius:6px;padding:5px 10px;font-size:11px;font-weight:600;cursor:pointer">💬 Chase</button>`:
+            <div style="display:flex;flex-direction:column;gap:4px">${['invoiced','overdue'].includes(j.status)?`<button onclick="markPaid('${j.id}')" style="background:#10b981;color:#fff;border:none;border-radius:6px;padding:5px 10px;font-size:11px;font-weight:600;cursor:pointer">✓ Paid</button><button onclick="openInvoiceLineEditor('${j.id}')" style="background:#1e3a5f;color:#fff;border:none;border-radius:6px;padding:5px 10px;font-size:11px;font-weight:600;cursor:pointer">📄 PDF</button><button onclick="markWrittenOff('${j.id}')" style="background:#fff;border:1px solid #f1f5f9;color:#94a3b8;border-radius:6px;padding:5px 10px;font-size:11px;font-weight:600;cursor:pointer" title="Write off as bad debt">✗ Write off</button><button onclick="sendWhatsApp('${j.id}','chase')" style="background:#fff7ed;border:1px solid #fed7aa;color:#9a3412;border-radius:6px;padding:5px 10px;font-size:11px;font-weight:600;cursor:pointer">💬 Chase</button>`:
               j.status==='paid'?`<div style="display:flex;flex-direction:column;gap:3px"><span style="font-size:11px;color:#10b981;font-weight:700">✓ ${fmtD(j.paidDate)}</span><button onclick="openInvoiceLineEditor('${j.id}')" style="background:#f1f5f9;border:1px solid #e2e8f0;border-radius:6px;color:#475569;padding:4px 10px;font-size:11px;font-weight:600;cursor:pointer">📄 PDF</button></div>`:''}</div>
           </div>`;}).join('')}
     </div>
+    ${(()=>{
+      const wo = validJobs.filter(j=>j.status==='written_off').sort((a,b)=>new Date(b.writtenOffAt||b.createdAt||0)-new Date(a.writtenOffAt||a.createdAt||0));
+      if(!wo.length) return '';
+      const woTotal = wo.reduce((s,j)=>s+(Number(j.writtenOffAmount||0)),0);
+      return `<div style="margin-top:16px;background:#fff;border:1px solid #e2e8f0;border-radius:12px;overflow:hidden">
+        <div style="background:#f8fafc;padding:12px 16px;display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid #e2e8f0">
+          <div style="font-size:13px;font-weight:800;color:#0f172a">✗ Written Off</div>
+          <div style="font-size:13px;font-weight:800;color:#ef4444">${fmt$(woTotal)} · ${wo.length} invoice${wo.length!==1?'s':''}</div>
+        </div>
+        ${wo.map(j=>{const c=gc(j.clientId);return `<div style="display:flex;align-items:center;gap:12px;padding:10px 16px;border-bottom:1px solid #f8fafc">
+          <div style="flex:1;min-width:0">
+            <div style="font-size:13px;font-weight:600;color:#0f172a">${esc(c?.company||'—')}</div>
+            <div style="font-size:11px;color:#94a3b8">${j.invoiceNumber||j.jobNumber} · Written off: ${fmtD(j.writtenOffAt)||'—'}</div>
+          </div>
+          <div style="font-size:13px;font-weight:700;color:#64748b">${fmt$(Number(j.writtenOffAmount||0))}</div>
+          <div style="display:flex;gap:5px">
+            <button onclick="unWriteOff('${j.id}')" style="background:#f1f5f9;border:1px solid #e2e8f0;border-radius:5px;padding:4px 9px;font-size:11px;font-weight:600;cursor:pointer;color:#334155">Undo</button>
+            <button onclick="openInvoiceLineEditor('${j.id}')" style="background:#f1f5f9;border:1px solid #e2e8f0;border-radius:5px;padding:4px 9px;font-size:11px;font-weight:600;cursor:pointer;color:#334155">📄 PDF</button>
+          </div>
+        </div>`;}).join('')}
+      </div>`;
+    })()}
   </div>`;
 }
 
@@ -6184,6 +6207,31 @@ function markPaid(id){
     </div>`;
     document.body.appendChild(d);
   }, 300);
+}
+
+function markWrittenOff(id){
+  const j=jobs.find(x=>x.id===id);
+  if(!j) return;
+  const amt=jobAmountDisplay(j);
+  if(!confirm(`Write off this invoice as bad debt? This removes it from outstanding/aged debtors.\n\n${j.invoiceNumber||j.jobNumber} · $${amt.toFixed(2)} · ${gc(j.clientId)?.company||''}\n\nThis cannot be easily undone.`)) return;
+  j.status='written_off';
+  j.writtenOffAt=today();
+  j.writtenOffAmount=amt;
+  logActivity(id,'✗ Written off — $'+amt.toFixed(2));
+  save();
+  renderMain();
+}
+
+function unWriteOff(id){
+  const j=jobs.find(x=>x.id===id);
+  if(!j) return;
+  if(!confirm(`Undo the write-off for ${j.invoiceNumber||j.jobNumber}? It will be restored to OVERDUE.`)) return;
+  j.status='overdue';
+  delete j.writtenOffAt;
+  delete j.writtenOffAmount;
+  logActivity(id,'↩ Write-off undone');
+  save();
+  renderMain();
 }
 
 function logPO(id){
