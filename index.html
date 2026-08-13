@@ -18921,6 +18921,12 @@ function generateQuotePDF(jobId){
 
 // ─── INVOICE LINE EDITOR ──────────────────────────────────────────────────────
 // All invoice PDFs go through this editor first. No more auto-guessing line items.
+// Invoice line items are GST-EXCLUSIVE; GST is added on top for the GST-INCLUSIVE total.
+function invLineTotalInc(lineTotal){
+  if(CFG.gstRegistered === false) return lineTotal;
+  return lineTotal * (1 + (Number(CFG.gst)||0.1));
+}
+
 function openInvoiceLineEditor(jobId){
   const j = jobs.find(x=>x.id===jobId);
   if(!j){ showToast('Job not found','error'); return; }
@@ -18928,7 +18934,10 @@ function openInvoiceLineEditor(jobId){
 
   if(!j.invoiceLines || !j.invoiceLines.length){
     const invAmt = Number(j.invoiceAmount||j.quoteAmount||0);
-    j.invoiceLines = [{id:Date.now().toString(), desc:j.scope||'Works as agreed', qty:1, unit:invAmt, amount:invAmt}];
+    // invoiceAmount/quoteAmount are stored GST-INCLUSIVE; seed the ex-GST line
+    // so the editor's Total (line x 1.1) lands back on the inclusive amount.
+    const seedEx = (CFG.gstRegistered !== false) ? invAmt/(1+(Number(CFG.gst)||0.1)) : invAmt;
+    j.invoiceLines = [{id:Date.now().toString(), desc:j.scope||'Works as agreed', qty:1, unit:seedEx, amount:seedEx}];
   }
 
   // Editable header fields
@@ -18974,10 +18983,11 @@ function openInvoiceLineEditor(jobId){
 
   function buildHTML(){
     const lineTotal = getLineTotal();
+    const lineTotalInc = invLineTotalInc(lineTotal);
     const invAmt = Number(j.invoiceAmount||j.quoteAmount||0);
-    const diff = Math.abs(lineTotal - invAmt);
+    const diff = Math.abs(lineTotalInc - invAmt);
     const diffWarn = diff > 0.01 ? `<div style="background:#fff8f4;border:1.5px solid #f07020;border-radius:8px;padding:10px 14px;font-size:12px;color:#c2400a;margin-bottom:12px">
-      ⚠ Line items total <strong>$${lineTotal.toFixed(2)}</strong> but invoice amount is <strong>$${invAmt.toFixed(2)}</strong>. Adjust lines or update invoice amount in the job (difference: $${diff.toFixed(2)}).
+      ⚠ Invoice total <strong>$${lineTotalInc.toFixed(2)}</strong> (incl. GST) but invoice amount is <strong>$${invAmt.toFixed(2)}</strong>. Adjust lines or update invoice amount in the job (difference: $${diff.toFixed(2)}).
     </div>` : '';
     const _ptEom = hf().payTermsEom != null ? hf().payTermsEom : (termsEOM(CFG.invoicePaymentTerms)||termsEOM(CFG.bizPaymentTerms));
     const _ptv = _ptEom ? '30eom' : ((hf().payTermsDays!==undefined&&hf().payTermsDays!==null) ? hf().payTermsDays : payTermsDays(CFG.invoicePaymentTerms||CFG.bizPaymentTerms,7));
@@ -19075,7 +19085,7 @@ function openInvoiceLineEditor(jobId){
           </div>
           <div style="text-align:right;font-size:17px;font-weight:900;color:#0e1f3d;padding:12px 16px;background:#0e1f3d;border-radius:8px;color:#fff;display:flex;justify-content:space-between;align-items:center">
             <span style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:rgba(255,255,255,0.7)">Invoice Total</span>
-            <span style="color:#f07020">$<span id="il-total">${lineTotal.toFixed(2)}</span></span>
+            <span style="color:#f07020">$<span id="il-total">${invLineTotalInc(lineTotal).toFixed(2)}</span></span>
           </div>
         </div>
 
@@ -19186,7 +19196,7 @@ function openInvoiceLineEditor(jobId){
         if(cells[3]) cells[3].textContent = '$'+(ln.qty*ln.unit).toFixed(2);
       }
       const totalEl = document.getElementById('il-total');
-      if(totalEl) totalEl.textContent = j.invoiceLines.reduce((s,l)=>s+(l.qty*l.unit),0).toFixed(2);
+      if(totalEl) totalEl.textContent = invLineTotalInc(j.invoiceLines.reduce((s,l)=>s+(l.qty*l.unit),0)).toFixed(2);
     }
     save();
   };
@@ -19228,9 +19238,13 @@ function openInvoiceLineEditor(jobId){
     j.invoiceNumber = j.invoiceHeaderFields.invoiceNumber;
     j.invoiceDue = j.invoiceHeaderFields.dueDate;
     j.poNumber = j.invoiceHeaderFields.poNumber||j.poNumber;
-    // Keep invoiceAmount in sync with line items total — critical for dashboard/revenue
+    // Keep invoiceAmount in sync with the GST-INCLUSIVE line items total so the
+    // dashboard/ledger reflects what the client actually pays. Matches generateInvoicePDF.
     const lineTotal = j.invoiceLines.reduce((s,l)=>s+(l.qty*l.unit),0);
-    if(lineTotal > 0) j.invoiceAmount = lineTotal;
+    const _gstOn = CFG.gstRegistered !== false;
+    const _gstRate = Number(CFG.gst)||0.1;
+    const _invInc = _gstOn ? lineTotal*(1+_gstRate) : lineTotal;
+    if(lineTotal > 0) j.invoiceAmount = _invInc;
     save();
     overlay.remove();
     generateInvoicePDF(jobId);
@@ -19266,13 +19280,23 @@ function generateInvoicePDF(jobId, mode){
         ? j.invoiceLines
         : [{desc:hf.scopeText||j.scope||'Works as agreed', qty:1, unit:invAmt, amount:invAmt}]);
   const lineTotal = lines.reduce((s,l)=>s+(l.qty*l.unit),0);
-  // Amounts are GST-INCLUSIVE (per quote terms: "GST is included in all amounts shown").
-  // Back-calculate the GST component instead of adding it on top — otherwise deposits
-  // and balance invoices get inflated above the quoted total.
   const _gst = Number(CFG.gst)||0.1;
   const _gstApplied = CFG.gstRegistered !== false;
-  const _subEx = _gstApplied ? lineTotal/(1+_gst) : lineTotal;
-  const _gstAmt = _gstApplied ? lineTotal - _subEx : 0;
+  // When the invoice has real, GST-EXCLUSIVE line items (entered in the line editor),
+  // GST is ADDED on top so the Total Due is the GST-INCLUSIVE price the client pays.
+  // The single-line fallback and the deposit line already carry a GST-INCLUSIVE total,
+  // so they must NOT be inflated again — only the GST component is shown for reference.
+  const _usingLines = !isDeposit && !!(j.invoiceLines && j.invoiceLines.length);
+  let _subEx, _gstAmt, _totalInc;
+  if (_usingLines) {
+    _subEx = lineTotal;
+    _gstAmt = _gstApplied ? lineTotal * _gst : 0;
+    _totalInc = _subEx + _gstAmt;
+  } else {
+    _totalInc = lineTotal;
+    _subEx = _gstApplied ? _totalInc / (1 + _gst) : _totalInc;
+    _gstAmt = _totalInc - _subEx;
+  }
 
   // QR code
   const payId = B.bizPayID||'';
@@ -19393,7 +19417,7 @@ function generateInvoicePDF(jobId, mode){
         ${_gstApplied ? `<div style="display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid #e8edf5"><span style="font-size:13px;color:#64748b;font-weight:600">GST (${Math.round(_gst*100)}%)</span><span style="font-size:13px;font-weight:700">$${_gstAmt.toFixed(2)}</span></div>` : ''}
         <div style="display:flex;justify-content:space-between;padding:14px 16px;background:#0e1f3d;border-radius:8px;margin-top:6px">
           <span style="font-family:Barlow Condensed,sans-serif;font-size:16px;font-weight:800;color:#fff;text-transform:uppercase;letter-spacing:1px">Total Due</span>
-          <span style="font-family:Barlow Condensed,sans-serif;font-size:22px;font-weight:900;color:#f07020">$${lineTotal.toFixed(2)}</span>
+          <span style="font-family:Barlow Condensed,sans-serif;font-size:22px;font-weight:900;color:#f07020">$${_totalInc.toFixed(2)}</span>
         </div>
       </div>
     </div>
@@ -19428,7 +19452,7 @@ function generateInvoicePDF(jobId, mode){
           ${(()=>{
             const sUrl = stripePayUrl(jobId, isDeposit?invNum:undefined);
             if(sUrl) {
-              const cardTotal = lineTotal;
+              const cardTotal = _totalInc;
               const cardSurcharge = cardTotal * 0.017;
               const cardGrandTotal = cardTotal + cardSurcharge;
               return `<div style="font-size:12px;color:#334155;margin-bottom:8px;font-weight:600">Pay instantly by card via the link below:</div>
