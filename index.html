@@ -2501,13 +2501,27 @@ function jobRevenue(j) {
   return collected > 0 ? collected : Math.max(0, Number(j.quoteAmount) || 0);
 }
 
+// ─── JOB AMOUNT HELPER (GST handling) ────────────────────────────────────────
+// Line items are entered GST-EXCLUSIVE. When an invoice is built from 2+ line
+// items, GST is added on top for the GST-INCLUSIVE amount. Single-line invoices
+// and ordinary amounts are treated as already-inclusive (unchanged).
+function jobAmountDisplay(j) {
+  const rate = Number(CFG.gst) || 0.1;
+  const gstOn = CFG.gstRegistered !== false;
+  if (j.invoiceLines && (j.invoiceLines.length || 0) >= 2) {
+    const lt = j.invoiceLines.reduce((s, l) => s + ((Number(l.qty) || 0) * (Number(l.unit) || 0)), 0);
+    return gstOn ? lt * (1 + rate) : lt;
+  }
+  return Number(j.invoiceAmount || j.quoteAmount || 0);
+}
+
 // ─── JOB OUTSTANDING HELPER ──────────────────────────────────────────────────
 // Returns the unpaid balance for a job.
-// If it has an invoice amount entered, that is the balance due.
+// If it has an invoice amount entered, that is the balance due (GST-inclusive).
 // Otherwise falls back to quote amount minus deposit.
 function jobOutstanding(j) {
   const inv = Number(j.invoiceAmount);
-  if (inv > 0) return inv;
+  if (inv > 0) return jobAmountDisplay(j);
   const q = Number(j.quoteAmount) || 0;
   const d = Number(j.depositAmount) || 0;
   return (q - d > 0) ? (q - d) : 0;
@@ -18921,9 +18935,11 @@ function generateQuotePDF(jobId){
 
 // ─── INVOICE LINE EDITOR ──────────────────────────────────────────────────────
 // All invoice PDFs go through this editor first. No more auto-guessing line items.
-// Invoice line items are GST-EXCLUSIVE; GST is added on top for the GST-INCLUSIVE total.
-function invLineTotalInc(lineTotal){
+// Invoice line items are GST-EXCLUSIVE; GST is added on top (for 2+ line items)
+// for the GST-INCLUSIVE total. Single-line invoices keep the entered amount.
+function invLineTotalInc(job, lineTotal){
   if(CFG.gstRegistered === false) return lineTotal;
+  if(!job.invoiceLines || (job.invoiceLines.length || 0) < 2) return lineTotal;
   return lineTotal * (1 + (Number(CFG.gst)||0.1));
 }
 
@@ -18934,10 +18950,7 @@ function openInvoiceLineEditor(jobId){
 
   if(!j.invoiceLines || !j.invoiceLines.length){
     const invAmt = Number(j.invoiceAmount||j.quoteAmount||0);
-    // invoiceAmount/quoteAmount are stored GST-INCLUSIVE; seed the ex-GST line
-    // so the editor's Total (line x 1.1) lands back on the inclusive amount.
-    const seedEx = (CFG.gstRegistered !== false) ? invAmt/(1+(Number(CFG.gst)||0.1)) : invAmt;
-    j.invoiceLines = [{id:Date.now().toString(), desc:j.scope||'Works as agreed', qty:1, unit:seedEx, amount:seedEx}];
+    j.invoiceLines = [{id:Date.now().toString(), desc:j.scope||'Works as agreed', qty:1, unit:invAmt, amount:invAmt}];
   }
 
   // Editable header fields
@@ -19085,7 +19098,7 @@ function openInvoiceLineEditor(jobId){
           </div>
           <div style="text-align:right;font-size:17px;font-weight:900;color:#0e1f3d;padding:12px 16px;background:#0e1f3d;border-radius:8px;color:#fff;display:flex;justify-content:space-between;align-items:center">
             <span style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:rgba(255,255,255,0.7)">Invoice Total</span>
-            <span style="color:#f07020">$<span id="il-total">${invLineTotalInc(lineTotal).toFixed(2)}</span></span>
+            <span style="color:#f07020">$<span id="il-total">${invLineTotalInc(j, lineTotal).toFixed(2)}</span></span>
           </div>
         </div>
 
@@ -19196,7 +19209,7 @@ function openInvoiceLineEditor(jobId){
         if(cells[3]) cells[3].textContent = '$'+(ln.qty*ln.unit).toFixed(2);
       }
       const totalEl = document.getElementById('il-total');
-      if(totalEl) totalEl.textContent = invLineTotalInc(j.invoiceLines.reduce((s,l)=>s+(l.qty*l.unit),0)).toFixed(2);
+      if(totalEl) totalEl.textContent = invLineTotalInc(j, j.invoiceLines.reduce((s,l)=>s+(l.qty*l.unit),0)).toFixed(2);
     }
     save();
   };
@@ -19238,13 +19251,10 @@ function openInvoiceLineEditor(jobId){
     j.invoiceNumber = j.invoiceHeaderFields.invoiceNumber;
     j.invoiceDue = j.invoiceHeaderFields.dueDate;
     j.poNumber = j.invoiceHeaderFields.poNumber||j.poNumber;
-    // Keep invoiceAmount in sync with the GST-INCLUSIVE line items total so the
-    // dashboard/ledger reflects what the client actually pays. Matches generateInvoicePDF.
+    // Keep invoiceAmount in sync with the ex-GST line items total. The GST-inclusive
+    // total is derived at display time (jobAmountDisplay adds GST for 2+ line items).
     const lineTotal = j.invoiceLines.reduce((s,l)=>s+(l.qty*l.unit),0);
-    const _gstOn = CFG.gstRegistered !== false;
-    const _gstRate = Number(CFG.gst)||0.1;
-    const _invInc = _gstOn ? lineTotal*(1+_gstRate) : lineTotal;
-    if(lineTotal > 0) j.invoiceAmount = _invInc;
+    if(lineTotal > 0) j.invoiceAmount = lineTotal;
     save();
     overlay.remove();
     generateInvoicePDF(jobId);
@@ -19282,11 +19292,10 @@ function generateInvoicePDF(jobId, mode){
   const lineTotal = lines.reduce((s,l)=>s+(l.qty*l.unit),0);
   const _gst = Number(CFG.gst)||0.1;
   const _gstApplied = CFG.gstRegistered !== false;
-  // When the invoice has real, GST-EXCLUSIVE line items (entered in the line editor),
-  // GST is ADDED on top so the Total Due is the GST-INCLUSIVE price the client pays.
-  // The single-line fallback and the deposit line already carry a GST-INCLUSIVE total,
-  // so they must NOT be inflated again — only the GST component is shown for reference.
-  const _usingLines = !isDeposit && !!(j.invoiceLines && j.invoiceLines.length);
+  // When the invoice has 2+ GST-EXCLUSIVE line items, GST is ADDED on top so the
+  // Total Due is the GST-INCLUSIVE price the client pays. Single-line invoices and
+  // the deposit line already carry a GST-INCLUSIVE total, so they are NOT inflated.
+  const _usingLines = !isDeposit && (j.invoiceLines && (j.invoiceLines.length || 0) >= 2);
   let _subEx, _gstAmt, _totalInc;
   if (_usingLines) {
     _subEx = lineTotal;
