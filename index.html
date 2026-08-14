@@ -19479,6 +19479,17 @@ function generateInvoicePDF(jobId, mode){
           <span style="font-family:Barlow Condensed,sans-serif;font-size:16px;font-weight:800;color:#fff;text-transform:uppercase;letter-spacing:1px">Total Due</span>
           <span style="font-family:Barlow Condensed,sans-serif;font-size:22px;font-weight:900;color:#f07020">$${_totalInc.toFixed(2)}</span>
         </div>
+        ${stripePayUrl(jobId, isDeposit?invNum:undefined) ? (()=>{
+          const _stripeFee = Math.round(_totalInc * 0.017 * 100) / 100;
+          const _stripeTotal = Math.round((_totalInc + _stripeFee) * 100) / 100;
+          return `<div style="margin-top:10px;padding:14px 16px;background:linear-gradient(135deg,#5b21b6,#7c3aed);border:1px solid #4c1d95;border-radius:8px;color:#fff;box-shadow:0 4px 12px rgba(91,33,182,0.22)">
+            <div style="font-family:Barlow Condensed,sans-serif;font-size:14px;font-weight:800;text-transform:uppercase;letter-spacing:1px;margin-bottom:7px">Total if paying by card with Stripe</div>
+            <div style="display:flex;justify-content:space-between;align-items:baseline;gap:12px">
+              <span style="font-size:11px;color:#ede9fe">${fmt$(_totalInc)} invoice total + 1.7% card fee (${fmt$(_stripeFee)})</span>
+              <span style="font-family:Barlow Condensed,sans-serif;font-size:24px;font-weight:900;white-space:nowrap">${fmt$(_stripeTotal)}</span>
+            </div>
+          </div>`;
+        })() : ''}
       </div>
     </div>
   </div>
@@ -19519,10 +19530,9 @@ function generateInvoicePDF(jobId, mode){
               <div style="background:#f5f3ff;border:1.5px solid #c4b5fd;border-radius:8px;padding:10px 14px;word-break:break-all;margin-bottom:10px">
                 <a href="${sUrl}" style="font-size:12px;color:#635bff;font-weight:700;text-decoration:none">${sUrl}</a>
               </div>
-              <div style="background:#fef3c7;border:1.5px solid #f59e0b;border-radius:8px;padding:10px 14px;margin-bottom:8px">
-                <div style="font-size:12px;color:#92400e;font-weight:700">⚠ A 1.7% card processing fee applies</div>
-                <div style="font-size:11px;color:#78350f;margin-top:4px">Invoice total: ${fmt$(cardTotal)} + 1.7% fee: ${fmt$(cardSurcharge)}</div>
-                <div style="font-size:14px;color:#92400e;font-weight:800;margin-top:4px">Total to pay by card: ${fmt$(cardGrandTotal)}</div>
+              <div style="background:#f5f3ff;border:1.5px solid #c4b5fd;border-radius:8px;padding:10px 14px;margin-bottom:8px">
+                <div style="font-size:12px;color:#5b21b6;font-weight:700">A 1.7% card processing fee applies</div>
+                <div style="font-size:11px;color:#6d28d9;margin-top:4px">The Stripe card total is shown directly beneath the invoice total above.</div>
               </div>
               <div style="font-size:10px;color:#94a3b8">Ref: ${esc(invNum)} is pre-filled automatically</div>`;
             }
