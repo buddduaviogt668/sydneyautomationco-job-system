@@ -19131,10 +19131,15 @@ function generateQuotePDF(jobId){
 // Invoice line items are GST-EXCLUSIVE; GST is added on top for the GST-INCLUSIVE
 // total on standalone line-item invoices. Deposit-split invoices keep their amounts.
 function invLineTotalInc(job, lineTotal){
-  if(CFG.gstRegistered === false) return lineTotal;
-  if(!job.invoiceLines || (job.invoiceLines.length || 0) < 1) return lineTotal;
-  if(Number(job.depositAmount) > 0) return lineTotal;
-  return lineTotal * (1 + (Number(CFG.gst)||0.1));
+  const total=Number(lineTotal)||0;
+  if(CFG.gstRegistered === false) return total;
+  if(!job.invoiceLines || (job.invoiceLines.length || 0) < 1) return total;
+  if(Number(job.depositAmount) > 0) return total;
+  // Existing records may store line items already GST-inclusive. If their sum
+  // matches the recorded invoice/quote amount, do not add GST a second time.
+  const recorded=Number(job.invoiceAmount||job.quoteAmount||0);
+  if(recorded>0 && Math.abs(total-recorded)<=0.02) return total;
+  return total * (1 + (Number(CFG.gst)||0.1));
 }
 
 function openInvoiceLineEditor(jobId){
@@ -19490,10 +19495,11 @@ function generateInvoicePDF(jobId, mode){
   const lineTotal = lines.reduce((s,l)=>s+(l.qty*l.unit),0);
   const _gst = Number(CFG.gst)||0.1;
   const _gstApplied = CFG.gstRegistered !== false;
-  // Standalone line-item invoices are GST-EXCLUSIVE, so GST is ADDED on top for the
-  // GST-INCLUSIVE Total Due. Deposit-split and single agreed-price invoices already
-  // carry GST-INCLUSIVE totals and are NOT inflated again.
-  const _usingLines = !isDeposit && (j.invoiceLines && (j.invoiceLines.length || 0) >= 1) && !(Number(j.depositAmount) > 0);
+  // Add GST only when line items are clearly ex-GST. Existing line items whose
+  // sum matches the recorded invoice amount are already GST-inclusive and are
+  // displayed without a second GST addition.
+  const _linesMatchRecordedTotal = !isDeposit && Number(invAmt)>0 && Math.abs(lineTotal-Number(invAmt))<=0.02;
+  const _usingLines = !isDeposit && (j.invoiceLines && (j.invoiceLines.length || 0) >= 1) && !(Number(j.depositAmount) > 0) && !_linesMatchRecordedTotal;
   let _subEx, _gstAmt, _totalInc;
   if (_usingLines) {
     _subEx = lineTotal;
