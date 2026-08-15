@@ -1672,6 +1672,21 @@ function _syncCounters(){
   if(changed){ STORE.set('counters', counters); }
 }
 
+function _migrateExpenseProfitConfig(cfg){
+  if(!cfg || typeof cfg!=='object') return cfg;
+  if(Array.isArray(cfg.overheads)){
+    const internet=cfg.overheads.find(o=>o.name==='Internet' && Number(o.monthly)===110);
+    if(internet) internet.monthly=114;
+    const ms=cfg.overheads.find(o=>o.name==='Software / Subscriptions' && Number(o.monthly)===9.9);
+    if(ms){ ms.name='Microsoft 365'; ms.monthly=9.9; }
+  }
+  if(Array.isArray(cfg.startupItems)) cfg.startupItems.forEach(item=>{
+    const n=String(item.name||'').toLowerCase();
+    if(n.includes('sticker')||n.includes('polo')||n.includes('shirt')||n.includes('jacket')||n.includes('printing')) item.recoverOver=9999;
+  });
+  return cfg;
+}
+
 function _applySbData(sbData){
   if(!sbData) return;
   if (sbData.clients)   { clients   = sbData.clients;   localStorage.setItem('sac:clients',   JSON.stringify(clients)); }
@@ -1682,7 +1697,7 @@ function _applySbData(sbData){
   if (sbData.expenses)  { expenses  = sbData.expenses;   localStorage.setItem('sac:expenses',  JSON.stringify(expenses)); }
   if (sbData.taxman)    { taxManual = sbData.taxman;      localStorage.setItem('sac:taxman',    JSON.stringify(taxManual)); }
   if (sbData.supInvoices){ window._supInvoices = sbData.supInvoices; localStorage.setItem('sac:supInvoices', JSON.stringify(sbData.supInvoices)); }
-  if (sbData.cfg)       { localStorage.setItem('sac:cfg', JSON.stringify(sbData.cfg)); reloadCFG(); }
+  if (sbData.cfg)       { const _cloudCfg=_migrateExpenseProfitConfig(sbData.cfg); localStorage.setItem('sac:cfg', JSON.stringify(_cloudCfg)); reloadCFG(); }
   if (sbData.partsdb)   { const _pd=_ensurePartsArray(sbData.partsdb); if(_pd){ PARTS_DB=_pd.map(p=>({supplier:'',...p})); localStorage.setItem('sac:partsdb',JSON.stringify(PARTS_DB)); } }
   if (sbData.projects)  { projects  = sbData.projects;   STORE.set('projects',  projects); }
   if (sbData.timesheets){ timesheets = sbData.timesheets; localStorage.setItem('sac:timesheets', JSON.stringify(timesheets)); }
@@ -2354,13 +2369,13 @@ const CFG_DEFAULTS = {
   overheads:[
     {id:'oh1',name:'Business Insurance',monthly:55.30},
     {id:'oh2',name:'Phone',monthly:55.00},
-    {id:'oh3',name:'Internet',monthly:110.00},
+    {id:'oh3',name:'Internet',monthly:114.00},
     {id:'oh4',name:'Rego & Car Insurance',monthly:198.33},
     {id:'oh5',name:'Licence Fees',monthly:3.80},
     {id:'oh6',name:'Domain Name',monthly:2.18},
     {id:'oh7',name:'Website Hosting',monthly:3.29},
     {id:'oh8',name:'Business Name Registration',monthly:3.67},
-    {id:'oh9',name:'Software / Subscriptions',monthly:0},
+    {id:'oh9',name:'Microsoft 365',monthly:9.90},
     {id:'oh10',name:'Other',monthly:0},
   ],
   suppliers:[
@@ -2391,14 +2406,32 @@ const CFG_DEFAULTS = {
   // Pay run log
   payRuns:[],
   startupItems:[
-    {id:'su1',name:'Stickers (service call)',total:50,recoverOver:20},
-    {id:'su2',name:'Polo shirts',total:40,recoverOver:20},
-    {id:'su3',name:'Shirt printing / logo',total:177,recoverOver:20},
+    {id:'su1',name:'Stickers (service call)',total:50,recoverOver:9999},
+    {id:'su2',name:'Polo shirts',total:40,recoverOver:9999},
+    {id:'su3',name:'Shirt printing / logo',total:177,recoverOver:9999},
   ]
 };
 
 // Load CFG from storage, merge with defaults to pick up any new keys
 let _storedCFG = STORE.get('cfg') || {};
+// Expense/profitability correction migration: update only the old untouched defaults.
+// Historical expense rows remain unchanged; this affects the current management model.
+(function migrateExpenseProfitDefaults(){
+  let dirty=false;
+  if(Array.isArray(_storedCFG.overheads)){
+    const internet=_storedCFG.overheads.find(o=>o.name==='Internet' && Number(o.monthly)===110);
+    if(internet){ internet.monthly=114; dirty=true; }
+    const ms=_storedCFG.overheads.find(o=>o.name==='Software / Subscriptions' && Number(o.monthly)===9.9);
+    if(ms){ ms.name='Microsoft 365'; ms.monthly=9.9; dirty=true; }
+  }
+  if(Array.isArray(_storedCFG.startupItems)){
+    _storedCFG.startupItems.forEach(item=>{
+      const n=String(item.name||'').toLowerCase();
+      if((n.includes('sticker')||n.includes('polo')||n.includes('shirt')||n.includes('jacket')||n.includes('printing')) && Number(item.recoverOver)!==9999){ item.recoverOver=9999; dirty=true; }
+    });
+  }
+  if(dirty) STORE.set('cfg', _storedCFG);
+})();
 // Force GST migration: if stored config has gst:0 and no gstRegistered, upgrade to GST registered
 if (_storedCFG.gst === 0 && _storedCFG.gstRegistered === undefined) {
   _storedCFG.gst = 0.1;
@@ -2524,7 +2557,7 @@ function jobsThisMonthCount(){
 }
 function overheadPerJob(){ return overheadMonthlyTotal() / jobsThisMonthCount(); }
 function defaultTravelCost(km, tolls){ return (km * 2 * CFG.atoRate) + tolls; }
-function totalFixedPerJob(km, tolls){ return overheadPerJob() + startupRecoveryPerJob() + defaultTravelCost(km||CFG.defaultKm, tolls!=null?tolls:CFG.defaultTolls); }
+function totalFixedPerJob(km, tolls){ return overheadPerJob() + defaultTravelCost(km||CFG.defaultKm, tolls!=null?tolls:CFG.defaultTolls); }
 
 let currentScreen = 'dashboard';
 const APP_VERSION = 'v32';
@@ -4174,7 +4207,7 @@ function renderInlineQuoteBuilder(){
   const rawTotal=NQB.callout+partsSell+labourSell+frtCharge;
   const minCharge=CFG.callout+(CFG.minHours*CFG.labourRate);
   const total=Math.max(rawTotal,minCharge);
-  const totalCost=partsCost+travelCost+frtCost+overheadPerJob()+startupRecoveryPerJob();
+  const totalCost=partsCost+travelCost+frtCost+overheadPerJob();
   const margin=total>0?Math.round(((total-totalCost)/total)*100):0;
   const nextNum=`SAQ_${counters.SAQ||10144}`;
   const iS=`width:100%;padding:6px 9px;border:1px solid #e2e8f0;border-radius:6px;font-size:13px;background:#fff;box-sizing:border-box;font-family:'DM Sans',sans-serif`;
@@ -8392,7 +8425,7 @@ function renderQuoteBuilderModal(jobId){
   const rawTotal=QB.callout+partsSell+labourSell+freightCharge;
   const total=Math.max(rawTotal, minCharge);
   const belowMin=rawTotal<minCharge;
-  const totalCost=partsCost+travelCost+freightCost+overheadPerJob()+startupRecoveryPerJob();
+  const totalCost=partsCost+travelCost+freightCost+overheadPerJob();
   const takeHome=total-totalCost;
   const margin=total>0?Math.round((takeHome/total)*100):0;
 
