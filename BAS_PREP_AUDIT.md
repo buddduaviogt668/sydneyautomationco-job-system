@@ -18,3 +18,11 @@ The Payroll screen now includes an explicit BAS Preparation panel, period dates,
 2. ATO PAYG withholding labels: https://www.ato.gov.au/businesses-and-organisations/preparing-lodging-and-paying/business-activity-statements-bas/pay-as-you-go-payg-withholding
 3. Xero Australian GST/BAS workflow: https://www.xero.com/au/accounting-software/submit-gst-returns/
 4. ServiceM8 contractor workflow: https://www.servicem8.com/
+
+## Locked-period workflow
+
+Each BAS quarter now has a persistent period record keyed by its date range. The period can be left in Draft, marked Review requested, or Approved and locked. Locking stores a frozen BAS snapshot and prevents later BAS adjustments and pay-run additions in that period until an unlock is authorised with a documented reason. Review requests, approvals, locks, unlocks, and adjustments are recorded with timestamp, actor, event type, and notes.
+
+Adjustments are explicit field-level entries for G1, 1A, G10, 1B, W1, W2, W3, or W4. Each adjustment stores amount, reason, actor, timestamp, status, and can be voided before locking. The CSV export uses the adjusted or frozen values and remains labelled as a draft.
+
+The lock is a workflow and audit control inside the browser application; it is not a substitute for server-side authorization. A future SaaS phase should move period state and event history into authenticated server-side tables with row-level security and immutable append-only events.
