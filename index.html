@@ -2367,6 +2367,7 @@ const CFG_DEFAULTS = {
   calendarAutoAdd:true,
   incomeMin:60000, incomeComfort:90000, incomeStretch:120000,
   businessStructure:'sole_trader',
+  payrollMode:'owner_drawings',
   taxReserveRate:0.30,
   retirementReserveRate:0.115,
   ownerDrawMonthly:6000,
@@ -17298,7 +17299,65 @@ function barChart(monthData, width, height){
 }
 
 // ─── PAYROLL SCREEN ───────────────────────────────────────────────────────────
+function basQuarterForDate(d){
+  const dt=d instanceof Date?d:new Date(d||new Date());
+  const fyStart=dt.getMonth()>=6?dt.getFullYear():dt.getFullYear()-1;
+  const q=dt.getMonth()>=6&&dt.getMonth()<=8?1:dt.getMonth()>=9&&dt.getMonth()<=11?2:dt.getMonth()<=2?3:4;
+  const starts={1:`${fyStart}-07-01`,2:`${fyStart}-10-01`,3:`${fyStart+1}-01-01`,4:`${fyStart+1}-04-01`};
+  const ends={1:`${fyStart}-09-30`,2:`${fyStart}-12-31`,3:`${fyStart+1}-03-31`,4:`${fyStart+1}-06-30`};
+  return {fyStart,q,start:starts[q],end:ends[q],label:`Q${q} FY${String(fyStart).slice(-2)}/${String(fyStart+1).slice(-2)}`};
+}
+function calcBASDraft(){
+  const q=basQuarterForDate(new Date());
+  const inRange=d=>d&&d>=q.start&&d<=q.end;
+  const cashSales=jobs.filter(j=>j.status==='paid'&&inRange(j.paidDate)).reduce((s,j)=>s+jobRevenue(j),0);
+  const expenseRows=(expenses||[]).filter(e=>inRange(e.date));
+  const supplierRows=(window._supInvoices||[]).filter(e=>inRange(e.date||e.invoiceDate));
+  const expenseGross=expenseRows.reduce((s,e)=>s+Number(e.amount||0),0);
+  const supplierGross=supplierRows.reduce((s,e)=>s+Number(e.amount||0),0);
+  const purchasesGross=expenseGross+supplierGross;
+  const salesGST=gstComponentInclusive(cashSales);
+  const inputGST=gstComponentInclusive(expenseGross)+gstComponentInclusive(supplierGross);
+  const mode=CFG.payrollMode||((CFG.businessStructure||'sole_trader')==='sole_trader'?'owner_drawings':'employee_payroll');
+  const payRows=(CFG.payRuns||[]).filter(r=>inRange(r.date));
+  const ownerDrawings=payRows.reduce((s,r)=>s+Number(r.gross||r.net||0),0);
+  const w1=mode==='employee_payroll'?ownerDrawings:0;
+  const w2=mode==='employee_payroll'?payRows.reduce((s,r)=>s+Number(r.tax||0),0):0;
+  const w3=0,w4=0,w5=w2+w3+w4;
+  return {q,cashSales,expenseGross,supplierGross,purchasesGross,salesGST,inputGST,netGST:salesGST-inputGST,mode,payRows,ownerDrawings,w1,w2,w3,w4,w5};
+}
+function setPayrollMode(mode){ CFG.payrollMode=mode; saveCFG(); renderMain(); }
+function exportBASDraft(){
+  const b=calcBASDraft();
+  const rows=[['Sydney Automation Co. — BAS Draft (review only)'],['Period',b.q.start,b.q.end],['Basis','Cash basis estimate — confirm accounting basis'],[],['Label','Amount','Source / note'],['G1 Total sales',b.cashSales,'Paid jobs in period'],['1A GST on sales',b.salesGST,'GST-inclusive estimate'],['G10 Purchases',b.purchasesGross,'Logged expenses + supplier invoices'],['1B GST on purchases',b.inputGST,'GST-inclusive estimate'],['Net GST payable/refund',b.netGST,'1A less 1B'],['W1 Salary/wages',b.w1,b.mode==='owner_drawings'?'Owner drawings excluded':'Logged pay runs'],['W2 PAYG withheld',b.w2,b.mode==='owner_drawings'?'Owner drawings excluded':'Logged PAYG'],['W3 Other withholding',b.w3,'No records'],['W4 No-ABN withholding',b.w4,'No records'],['W5 Total withheld',b.w5,'W2 + W3 + W4'],['Owner drawings logged',b.ownerDrawings,'Not a wage for sole-trader BAS treatment']];
+  const csv=rows.map(r=>r.map(v=>'"'+String(v??'').replace(/"/g,'""')+'"').join(',')).join('\n');
+  const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([csv],{type:'text/csv'}));a.download='SydneyAutomation_BAS_Draft_'+b.q.start+'_'+b.q.end+'.csv';a.click();
+}
+function renderBASDraftPanel(){
+  const b=calcBASDraft();
+  const sole=b.mode==='owner_drawings';
+  return `<div style="background:#fff;border:1px solid #bfdbfe;border-radius:12px;padding:18px 20px;margin-bottom:20px">
+    <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap">
+      <div><div style="font-size:16px;font-weight:800;color:#0f172a">BAS Preparation — ${b.q.label}</div><div style="font-size:11px;color:#64748b;margin-top:3px">${b.q.start} to ${b.q.end} · cash-basis management draft · <strong>not lodged</strong></div></div>
+      <div style="display:flex;gap:6px;flex-wrap:wrap"><button onclick="exportBASDraft()" style="background:#1d4ed8;color:#fff;border:none;border-radius:7px;padding:8px 11px;font-size:11px;font-weight:800;cursor:pointer">⬇ Export BAS Draft</button><button onclick="aiAsk('Review my BAS draft for ${b.q.label}. List the documents and accountant checks still required. Do not lodge it.')" style="background:#e0e7ff;color:#3730a3;border:none;border-radius:7px;padding:8px 11px;font-size:11px;font-weight:800;cursor:pointer">✦ BAS Review Checklist</button></div>
+    </div>
+    <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:9px;margin-top:15px">
+      <div style="background:#eff6ff;border-radius:8px;padding:11px"><div style="font-size:10px;color:#1d4ed8;font-weight:800;text-transform:uppercase">G1 Sales</div><div style="font-size:19px;font-weight:900;margin-top:4px">${fmt$(b.cashSales)}</div><div style="font-size:10px;color:#64748b">paid jobs</div></div>
+      <div style="background:#eef2ff;border-radius:8px;padding:11px"><div style="font-size:10px;color:#3730a3;font-weight:800;text-transform:uppercase">1A GST sales</div><div style="font-size:19px;font-weight:900;margin-top:4px">${fmt$(b.salesGST)}</div><div style="font-size:10px;color:#64748b">estimated</div></div>
+      <div style="background:#f8fafc;border-radius:8px;padding:11px"><div style="font-size:10px;color:#475569;font-weight:800;text-transform:uppercase">G10 Purchases</div><div style="font-size:19px;font-weight:900;margin-top:4px">${fmt$(b.purchasesGross)}</div><div style="font-size:10px;color:#64748b">logged records</div></div>
+      <div style="background:#f0fdf4;border-radius:8px;padding:11px"><div style="font-size:10px;color:#15803d;font-weight:800;text-transform:uppercase">1B GST credits</div><div style="font-size:19px;font-weight:900;margin-top:4px">${fmt$(b.inputGST)}</div><div style="font-size:10px;color:#64748b">estimated</div></div>
+      <div style="background:${b.netGST>=0?'#fff7ed':'#ecfdf5'};border-radius:8px;padding:11px"><div style="font-size:10px;color:${b.netGST>=0?'#c2410c':'#15803d'};font-weight:800;text-transform:uppercase">Net GST</div><div style="font-size:19px;font-weight:900;margin-top:4px">${fmt$(b.netGST)}</div><div style="font-size:10px;color:#64748b">before adjustments</div></div>
+    </div>
+    <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-top:13px;padding-top:12px;border-top:1px solid #e2e8f0">
+      <div style="font-size:11px;color:#475569"><strong>Payroll treatment:</strong> ${sole?'sole-trader owner drawings — excluded from W1/W2':'employee-style pay runs — included in W1/W2'} · Logged drawings/pay runs this quarter: <strong>${fmt$(b.ownerDrawings)}</strong></div>
+      <div style="display:flex;gap:5px"><button onclick="setPayrollMode('owner_drawings')" style="border:1px solid ${sole?'#2563eb':'#cbd5e1'};background:${sole?'#dbeafe':'#fff'};color:#1d4ed8;border-radius:6px;padding:6px 8px;font-size:10px;font-weight:800;cursor:pointer">Sole trader drawings</button><button onclick="setPayrollMode('employee_payroll')" style="border:1px solid ${!sole?'#2563eb':'#cbd5e1'};background:${!sole?'#dbeafe':'#fff'};color:#1d4ed8;border-radius:6px;padding:6px 8px;font-size:10px;font-weight:800;cursor:pointer">Employee payroll</button></div>
+    </div>
+    <div style="margin-top:11px;background:#fffbeb;border:1px solid #fde68a;border-radius:7px;padding:9px 11px;font-size:10px;color:#92400e;line-height:1.5"><strong>Draft control:</strong> This panel is a reconciliation aid, not an ATO lodgement. Confirm cash/accrual basis, GST tax codes, supplier invoices, BAS period, PAYG status, and any adjustments with your registered tax or BAS agent before filing.</div>
+  </div>`;
+}
+
 function renderPayroll(){
+  const soleTraderPayroll=(CFG.payrollMode||'owner_drawings')==='owner_drawings';
   const freq    = CFG.payFreq||'monthly';
   const gross   = Number(CFG.payGross)||0;
   const P       = calcPayRun(gross, freq);
@@ -17307,7 +17366,7 @@ function renderPayroll(){
 
   // Donut 1: Gross pay split
   const grossSlices = [
-    {value:P.taxPerPeriod,   color:'#ef4444', label:'PAYG Tax',    fmtVal:fmt$(P.taxPerPeriod),   pct:Math.round(P.taxPerPeriod/gross*100)},
+    {value:P.taxPerPeriod,   color:'#ef4444', label:soleTraderPayroll?'Tax reserve':'PAYG Tax',    fmtVal:fmt$(P.taxPerPeriod),   pct:Math.round(P.taxPerPeriod/gross*100)},
     {value:P.superPerPeriod, color:'#8b5cf6', label:'Super',       fmtVal:fmt$(P.superPerPeriod), pct:Math.round(P.superPerPeriod/gross*100)},
     {value:Math.max(0,P.netPay-P.billsPerPeriod), color:'#10b981', label:'Buffer / Savings', fmtVal:fmt$(Math.max(0,P.buffer)), pct:Math.round(Math.max(0,P.buffer)/gross*100)},
     {value:P.billsPerPeriod, color:'#3b82f6', label:'Bills & Mortgage', fmtVal:fmt$(P.billsPerPeriod), pct:Math.round(P.billsPerPeriod/gross*100)},
@@ -17360,7 +17419,7 @@ function renderPayroll(){
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:24px">
       <div>
         <h1 style="font-size:26px;font-weight:800">Payroll</h1>
-        <div style="font-size:13px;color:#64748b;margin-top:2px">Pay yourself a wage · Set aside PAYG tax · Grow your super · Know what's left for bills</div>
+        <div style="font-size:13px;color:#64748b;margin-top:2px">${soleTraderPayroll?'Plan owner drawings · Reserve tax · Build voluntary retirement savings · Know what is safe to withdraw':'Pay yourself a wage · Set aside PAYG tax · Grow your super · Know what\'s left for bills'}</div>
       </div>
       <div style="display:flex;gap:8px;flex-wrap:wrap">
         <button onclick="aiAsk('Give me a complete payroll health check. Am I paying myself the right amount given my current revenue? Is my PAYG withholding accurate? Is super on track? What should I pay myself THIS pay run? Be specific with dollar amounts.')" class="ai-section-btn" style="background:#6366f1">✦ AI Pay Health Check</button>
@@ -17433,12 +17492,13 @@ function renderPayroll(){
           <div style="font-size:11px;font-weight:800;color:#64748b;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:8px">Pay Myself Now?</div>
           <div style="font-size:18px;font-weight:800;color:${paidThisMonth>=(P?.grossPerPeriod||0)*1.5?'#10b981':'#f97316'}">${paidThisMonth>=(P?.grossPerPeriod||0)*1.5?'✓ Healthy':'⚠ Check'}</div>
           <div style="font-size:12px;color:#64748b;margin-top:2px">Collected this month: ${fmt$(paidThisMonth)}</div>
-          <div style="font-size:12px;color:#64748b">Pay run obligation: ${fmt$(P?.grossPerPeriod||0)}</div>
+          <div style="font-size:12px;color:#64748b">${soleTraderPayroll?'Owner-draw target':'Pay-run obligation'}: ${fmt$(P?.grossPerPeriod||0)}</div>
           <button onclick="aiAsk('Should I pay myself this ${freq}? My revenue collected this month is $${paidThisMonth.toFixed(0)}, my gross pay is $${gross.toFixed(0)}, I have $${totalOutstanding.toFixed(0)} outstanding invoices, and my bills total $${billsTotal.toFixed(0)}/month. Tell me exactly what to do with my cash: pay myself, hold back for tax, set aside super, pay bills. Give me a specific action plan with dollar amounts.')" style="margin-top:8px;background:#10b981;border:none;border-radius:6px;color:#fff;padding:6px 10px;font-size:11px;font-weight:700;cursor:pointer;width:100%">✦ Should I pay myself?</button>
         </div>`;
       })()}
     </div>
 
+    ${renderBASDraftPanel()}
     <!-- PAY SETTINGS BAR -->
     <div style="background:#0f172a;border-radius:12px;padding:20px 24px;margin-bottom:24px;display:flex;gap:20px;align-items:flex-end;flex-wrap:wrap">
       <div>
@@ -17450,11 +17510,11 @@ function renderPayroll(){
         </select>
       </div>
       <div>
-        <div style="font-size:11px;font-weight:700;color:#64748b;text-transform:uppercase;margin-bottom:6px">Gross Pay per ${freqLabel} ($)</div>
+        <div style="font-size:11px;font-weight:700;color:#64748b;text-transform:uppercase;margin-bottom:6px">${soleTraderPayroll?'Owner-draw target':'Gross Pay'} per ${freqLabel} ($)</div>
         <input type="number" value="${gross}" onchange="CFG.payGross=Number(this.value);saveCFG();renderMain()" style="padding:8px 12px;border-radius:7px;border:none;font-size:16px;font-weight:800;background:#1e3a5f;color:#fff;width:140px;font-family:inherit">
       </div>
       <div>
-        <div style="font-size:11px;font-weight:700;color:#64748b;text-transform:uppercase;margin-bottom:6px">Super Rate (%)</div>
+        <div style="font-size:11px;font-weight:700;color:#64748b;text-transform:uppercase;margin-bottom:6px">${soleTraderPayroll?'Voluntary retirement reserve (%)':'Super Rate (%)'}</div>
         <input type="number" step="0.5" value="${CFG.superRate}" onchange="CFG.superRate=Number(this.value);saveCFG();renderMain()" style="padding:8px 12px;border-radius:7px;border:none;font-size:14px;font-weight:700;background:#1e3a5f;color:#fff;width:90px;font-family:inherit">
       </div>
       <div>
@@ -17475,9 +17535,9 @@ function renderPayroll(){
     <!-- PAY BREAKDOWN CARDS -->
     <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:12px;margin-bottom:24px">
       ${payCard('Gross Pay',fmt$(P.grossPerPeriod),'per '+freqLabel,'#0f172a',fmt$(P.grossPerPeriod*P.periods)+'/yr')}
-      ${payCard('PAYG Tax',fmt$(P.taxPerPeriod),'withheld','#ef4444',fmt$(P.annualTax)+'/yr · set aside')}
-      ${payCard('Super',fmt$(P.superPerPeriod),'employer contrib.','#8b5cf6',fmt$(P.superPerPeriod*P.periods)+'/yr · '+CFG.superRate+'%')}
-      ${payCard('Net Take-Home',fmt$(P.netPay),'after tax','#10b981',fmt$(P.netPay*P.periods)+'/yr')}
+      ${payCard(soleTraderPayroll?'Tax Reserve (planning)':'PAYG Tax',fmt$(P.taxPerPeriod),soleTraderPayroll?'planning estimate':'withheld','#ef4444',fmt$(P.annualTax)+'/yr · set aside')}
+      ${payCard(soleTraderPayroll?'Retirement Reserve':'Super',fmt$(P.superPerPeriod),soleTraderPayroll?'voluntary target':'employer contrib.','#8b5cf6',fmt$(P.superPerPeriod*P.periods)+'/yr · '+CFG.superRate+'%')}
+      ${payCard(soleTraderPayroll?'Indicative Draw After Reserve':'Net Take-Home',fmt$(P.netPay),soleTraderPayroll?'not payroll net pay':'after tax','#10b981',fmt$(P.netPay*P.periods)+'/yr')}
       ${payCard('Bills & Mortgage',fmt$(P.billsPerPeriod),'allocated','#3b82f6',fmt$(billsTotal)+'/mo total')}
     </div>
 
@@ -17599,7 +17659,7 @@ function renderPayroll(){
       </div>
       <div style="margin-top:12px;font-size:12px;color:#94a3b8">
         As a sole trader you can make voluntary super contributions to any APRA-regulated fund. 
-        Contributions may be tax-deductible — confirm with your accountant. Current employer rate: ${CFG.superRate}% of gross.
+        Contributions may be tax-deductible — confirm with your accountant. ${soleTraderPayroll?'Current voluntary retirement target':'Current employer rate'}: ${CFG.superRate}% of gross.
       </div>
     </div>
 
