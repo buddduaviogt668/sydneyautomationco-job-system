@@ -443,7 +443,7 @@
     <div>
       <div style="color:#fff;font-size:15px;font-weight:800;display:flex;align-items:center;gap:8px">✦ AI Business Advisor</div>
       <div style="color:#6366f1;font-size:11px;font-weight:600;margin-top:2px;font-family:'DM Mono',monospace">Sydney Automation Co.</div>
-    <div style="font-size:10px;background:#f59e0b;color:#0f172a;border-radius:4px;padding:2px 7px;font-weight:800;letter-spacing:0.5px;display:inline-block;margin-top:4px">v31 — Quotes + Excel Import</div>
+    <div style="font-size:10px;background:#f59e0b;color:#0f172a;border-radius:4px;padding:2px 7px;font-weight:800;letter-spacing:0.5px;display:inline-block;margin-top:4px">v32 — Integrity + Quotes + Excel Import</div>
     </div>
     <button onclick="toggleAIPanel()" style="background:#1e293b;border:none;color:#94a3b8;width:32px;height:32px;border-radius:8px;font-size:18px;cursor:pointer;display:flex;align-items:center;justify-content:center">×</button>
   </div>
@@ -1096,6 +1096,10 @@ Programming of C-Bus shutter relay control…</div>
 const SUPABASE_URL = 'https://efttcebtqulrfbvduhit.supabase.co';
 const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImVmdHRjZWJ0cXVscmZidmR1aGl0Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzIxMDU1MDEsImV4cCI6MjA4NzY4MTUwMX0.LzYhiEy8wGsdiqJ4XNAiP-dqkfT-r_xvhsa_Vzh65s8';
 
+// v32 integrity foundation: every cloud sync is now auditable per dataset.
+const SYNC_SCHEMA_VERSION = 'v32-integrity-1';
+const SYNC_DATA_KEYS = ['clients','jobs','projects','leads','counters','kmlog','expenses','taxman','cfg','partsdb','timesheets','recurring','supInvoices'];
+
 const SB_HEADERS = {
   'apikey': SUPABASE_KEY,
   'Authorization': `Bearer ${SUPABASE_KEY}`,
@@ -1130,8 +1134,10 @@ const SB = {
       if (!res.ok) {
         const err = await res.text();
         console.warn('Supabase write error:', res.status, err);
+        return false;
       }
-    } catch(e) { console.warn('Supabase write failed:', e); }
+      return true;
+    } catch(e) { console.warn('Supabase write failed:', e); return false; }
   },
   async getAll() {
     try {
@@ -1148,6 +1154,63 @@ const SB = {
       return out;
     } catch(e) { return {}; }
   }
+};
+
+
+// ─── DATA INTEGRITY / CONFLICT UTILITIES ─────────────────────────────────────
+// Canonical JSON makes checksums stable across browsers and formatting changes.
+function _canonical(v){
+  if(Array.isArray(v)) return '['+v.map(_canonical).join(',')+']';
+  if(v && typeof v==='object') return '{'+Object.keys(v).sort().map(k=>JSON.stringify(k)+':'+_canonical(v[k])).join(',')+'}';
+  return JSON.stringify(v);
+}
+function _checksum(v){
+  const text=_canonical(v); let h=2166136261;
+  for(let i=0;i<text.length;i++){ h^=text.charCodeAt(i); h=Math.imul(h,16777619); }
+  return ('00000000'+(h>>>0).toString(16)).slice(-8);
+}
+function _recordKey(x, i){ return String(x?.id ?? x?.jobNumber ?? x?.invoiceNumber ?? x?.jobRef ?? ('row_'+i)); }
+function _mergeRecords(localValue, cloudValue){
+  if(!Array.isArray(localValue) || !Array.isArray(cloudValue)) return localValue ?? cloudValue;
+  const out=new Map();
+  cloudValue.forEach((x,i)=>out.set(_recordKey(x,i),x));
+  localValue.forEach((x,i)=>out.set(_recordKey(x,i),x));
+  return Array.from(out.values());
+}
+function _datasetValue(k){
+  if(k==='clients') return clients;
+  if(k==='jobs') return _jobsForCloud(jobs);
+  if(k==='projects') return projects;
+  if(k==='leads') return leads;
+  if(k==='counters') return counters;
+  if(k==='kmlog') return kmLog;
+  if(k==='expenses') return expenses;
+  if(k==='taxman') return taxManual;
+  if(k==='cfg') return CFG;
+  if(k==='partsdb') return PARTS_DB;
+  if(k==='timesheets') return timesheets;
+  if(k==='recurring') return recurringJobs;
+  if(k==='supInvoices') return (window._supInvoices||[]).map(i=>{const c={...i};delete c._fileObj;return c;});
+  return STORE.get(k);
+}
+function _buildSyncManifest(savedAt){
+  const datasets={};
+  SYNC_DATA_KEYS.forEach(k=>{const v=_datasetValue(k); datasets[k]={count:Array.isArray(v)?v.length:null,checksum:_checksum(v)};});
+  return {schema:SYNC_SCHEMA_VERSION,savedAt:Number(savedAt)||Date.now(),datasets};
+}
+function _manifestSummary(m){
+  if(!m) return 'no manifest';
+  const bad=Object.entries(m.datasets||{}).filter(([,x])=>!x?.checksum).map(([k])=>k);
+  return `${m.schema||'legacy'} · ${Object.keys(m.datasets||{}).length} datasets${bad.length?' · incomplete':''}`;
+}
+window.getSyncHealth=async function(){
+  const cloud=await SB.getAll();
+  const local={savedAt:Number(STORE.get('savedAt'))||0,manifest:STORE.get('syncManifest')};
+  const cloudManifest=cloud?.syncManifest||null;
+  const localChecks=_buildSyncManifest(local.savedAt);
+  const mismatches=[];
+  SYNC_DATA_KEYS.forEach(k=>{const a=localChecks.datasets[k]?.checksum,b=cloudManifest?.datasets?.[k]?.checksum;if(b&&a!==b)mismatches.push(k);});
+  return {online:Object.keys(cloud||{}).length>0,localSavedAt:local.savedAt,cloudSavedAt:Number(cloud?.savedAt)||0,localManifest:_manifestSummary(local.manifest),cloudManifest:_manifestSummary(cloudManifest),mismatches,localJobCount:Array.isArray(jobs)?jobs.length:0,cloudJobCount:Array.isArray(cloud?.jobs)?cloud.jobs.length:null,localKmCount:kmLog.length,cloudKmCount:Array.isArray(cloud?.kmlog)?cloud.kmlog.length:null};
 };
 
 const STORE = {
@@ -1370,7 +1433,8 @@ async function getDataPayload() {
     recurringJobs:(typeof recurringJobs!== 'undefined') ? recurringJobs: [],
     partsdb:      (typeof PARTS_DB     !== 'undefined') ? PARTS_DB     : [],
     websiteLeads: (typeof websiteLeads !== 'undefined') ? websiteLeads : [],
-    supInvoices:  supInvoicesWithFiles
+    supInvoices:  supInvoicesWithFiles,
+    syncManifest: _buildSyncManifest(Date.now())
   };
 }
 
@@ -1536,6 +1600,7 @@ function restoreFromData(data) {
     try { localStorage.setItem('sac:supInvoices', JSON.stringify(cleaned)); } catch(e) {}
   }
   if (data.savedAt) STORE.set('savedAt', String(data.savedAt));
+  if (data.syncManifest) STORE.set('syncManifest', data.syncManifest);
 }
 
 
@@ -1596,7 +1661,7 @@ function _applySbData(sbData){
   if (sbData.jobs)      { _jobGroupCache = null; jobs      = sbData.jobs;       localStorage.setItem('sac:jobs',      JSON.stringify(jobs)); }
   if (sbData.leads)     { leads     = sbData.leads;      localStorage.setItem('sac:leads',     JSON.stringify(leads)); }
   if (sbData.counters)  { counters  = sbData.counters;   localStorage.setItem('sac:counters',  JSON.stringify(counters)); }
-  if (sbData.kmlog)     { kmLog     = sbData.kmlog;      localStorage.setItem('sac:kmlog',     JSON.stringify(kmLog)); }
+  if (sbData.kmlog)     { kmLog     = _mergeRecords([], sbData.kmlog); localStorage.setItem('sac:kmlog', JSON.stringify(kmLog)); }
   if (sbData.expenses)  { expenses  = sbData.expenses;   localStorage.setItem('sac:expenses',  JSON.stringify(expenses)); }
   if (sbData.taxman)    { taxManual = sbData.taxman;      localStorage.setItem('sac:taxman',    JSON.stringify(taxManual)); }
   if (sbData.supInvoices){ window._supInvoices = sbData.supInvoices; localStorage.setItem('sac:supInvoices', JSON.stringify(sbData.supInvoices)); }
@@ -1606,23 +1671,31 @@ function _applySbData(sbData){
   if (sbData.timesheets){ timesheets = sbData.timesheets; localStorage.setItem('sac:timesheets', JSON.stringify(timesheets)); }
   if (sbData.recurring) { recurringJobs = sbData.recurring; localStorage.setItem('sac:recurring', JSON.stringify(recurringJobs)); }
   if (sbData.savedAt)   { STORE.set('savedAt', String(sbData.savedAt)); }
+  if (sbData.syncManifest) { STORE.set('syncManifest', sbData.syncManifest); }
   // Auto-fix overdue statuses after loading
   _scanAndPersistOverdue();
   _lastSyncTs = new Date();
 }
 
 async function _pushToSupabase(){
-  const keys = ['clients','jobs','projects','leads','counters','kmlog','expenses','taxman','cfg','partsdb','timesheets','recurring','supInvoices'];
   const now = Date.now();
-  await SB.set('savedAt', now);
+  const cloudBefore = await SB.getAll();
+  // Merge append-only logs by stable id so a phone trip cannot be erased by a laptop snapshot.
+  if(Array.isArray(cloudBefore?.kmlog)) kmLog = _mergeRecords(kmLog, cloudBefore.kmlog);
+  const values={};
+  SYNC_DATA_KEYS.forEach(k=>{ values[k]=_datasetValue(k); });
+  const manifest=_buildSyncManifest(now);
+  const results=[];
+  for(const k of SYNC_DATA_KEYS){ if(values[k]!==null && values[k]!==undefined) results.push(await SB.set(k, values[k])); }
+  results.push(await SB.set('savedAt', now));
+  results.push(await SB.set('syncManifest', manifest));
+  if(results.some(x=>x!==true)) throw new Error('One or more cloud dataset writes failed; local data was not marked synchronised.');
   STORE.set('savedAt', String(now));
-  for(const k of keys){
-    const v = k==='supInvoices'
-      ? (window._supInvoices||[]).map(i=>{const c={...i};delete c._fileObj;c.fileData=!!i.fileData;return c;})
-      : k==='jobs' ? _jobsForCloud(jobs)
-      : STORE.get(k) || (k==='clients'?clients:k==='counters'?counters:k==='kmlog'?kmLog:k==='expenses'?expenses:k==='taxman'?taxManual:null);
-    if(v !== null && v !== undefined) await SB.set(k, v);
-  }
+  STORE.set('syncManifest', manifest);
+  const cloudAfter=await SB.getAll();
+  const verify=cloudAfter?.syncManifest;
+  const failed=SYNC_DATA_KEYS.filter(k=>verify?.datasets?.[k]?.checksum!==manifest.datasets[k]?.checksum);
+  if(failed.length) throw new Error('Cloud verification failed for: '+failed.join(', '));
   _lastSyncTs = new Date();
   updateSyncStatus('online');
 }
@@ -1793,6 +1866,8 @@ const save = () => {
   showSaveFlash();
   // Push to Supabase (non-blocking) — track failures
   const _saveTs = Date.now();
+  const _manifest = _buildSyncManifest(_saveTs);
+  STORE.set('syncManifest', _manifest);
   Promise.all([
     SB.set('savedAt', _saveTs),
     SB.set('clients', clients),
@@ -1808,7 +1883,9 @@ const save = () => {
     SB.set('cfg', CFG),
     SB.set('partsdb', PARTS_DB),
     SB.set('supInvoices', (window._supInvoices||[]).map(i=>{const c={...i};delete c._fileObj;c.fileData=!!i.fileData;return c;})),
-  ]).then(()=>{
+    SB.set('syncManifest', _manifest),
+  ]).then((results)=>{
+    if(results.some(x=>x===false)) throw new Error('One or more dataset writes failed');
     _sbOnline = true;
     _lastSyncTs = new Date();
     updateSyncStatus('online');
@@ -2413,7 +2490,7 @@ function totalFixedPerJob(km, tolls){ return overheadPerJob() + startupRecoveryP
 let currentScreen = 'dashboard';
 const APP_VERSION = 'v31';
 window.addEventListener('DOMContentLoaded', () => {
-  setTimeout(() => showToast('Running v31 — Quotes + Excel Import active', 'success'), 1200);
+  setTimeout(() => showToast('Running v32 — Integrity + Quotes + Excel Import active', 'success'), 1200);
 });
 let modalStack = [];
 let calYear = new Date().getFullYear();
