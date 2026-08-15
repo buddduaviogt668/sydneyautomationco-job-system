@@ -6108,6 +6108,20 @@ function renderWorkOrderModal(id){
     </div>`;
 }
 
+// ─── FINANCIAL INTEGRITY GUARDS ───────────────────────────────────────────────
+function _invoiceRefsInUse(ref, exceptId){
+  const needle=String(ref||'').trim().toLowerCase();
+  if(!needle) return [];
+  return jobs.filter(x=>x.id!==exceptId && String(x.invoiceNumber||'').trim().toLowerCase()===needle);
+}
+function _invoiceRefAvailable(ref, exceptId){
+  const clashes=_invoiceRefsInUse(ref,exceptId);
+  if(!clashes.length) return true;
+  const desc=clashes.map(x=>`${x.jobNumber||x.id} (${x.invoiceAmount||'no amount'})`).join(', ');
+  showToast(`⚠ Invoice reference already used by ${desc}. Choose a new reference.`,'error');
+  return false;
+}
+
 // ─── ACTIONS ──────────────────────────────────────────────────────────────────
 function advanceJob(id, next){
   const j=jobs.find(x=>x.id===id);
@@ -6141,6 +6155,7 @@ function advanceJob(id, next){
     if(manualNum) updates.invoiceNumber=manualNum;
     if(manualAmt) updates.invoiceAmount=manualAmt;
     if(manualDue) updates.invoiceDue=manualDue;
+    if(!_invoiceRefAvailable(updates.invoiceNumber,j.id)) return;
   }
 
   // ── PAID: auto-set paid date + prompt WhatsApp receipt confirmation ──────────
@@ -6151,6 +6166,7 @@ function advanceJob(id, next){
     const manualAmt = document.getElementById('inv-amt')?.value;
     if(manualNum) updates.invoiceNumber=manualNum;
     if(manualAmt) updates.invoiceAmount=manualAmt;
+    if(updates.invoiceNumber && !_invoiceRefAvailable(updates.invoiceNumber,j.id)) return;
   }
 
   // ── DEPOSIT PAID: auto-fill deposit date ────────────────────────────────────
