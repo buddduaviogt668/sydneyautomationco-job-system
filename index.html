@@ -1204,6 +1204,20 @@ function _manifestSummary(m){
   const bad=Object.entries(m.datasets||{}).filter(([,x])=>!x?.checksum).map(([k])=>k);
   return `${m.schema||'legacy'} · ${Object.keys(m.datasets||{}).length} datasets${bad.length?' · incomplete':''}`;
 }
+window.runDataIntegrityAudit=function(){
+  const issues=[];
+  const dup=(arr,key,label)=>{const seen=new Map();(arr||[]).forEach((x,i)=>{const v=x?.[key];if(!v)return; if(seen.has(v)) issues.push({severity:'high',type:'duplicate',field:label,value:v,rows:[seen.get(v),i]}); else seen.set(v,i);});};
+  dup(jobs,'id','job id'); dup(jobs,'jobNumber','job number'); dup(jobs,'invoiceNumber','invoice number'); dup(clients,'id','client id'); dup(expenses,'id','expense id'); dup(kmLog,'id','kilometre id');
+  (jobs||[]).forEach((j,i)=>{
+    if(j.clientId && !clients.some(c=>c.id===j.clientId)) issues.push({severity:'high',type:'orphan',field:'clientId',value:j.clientId,row:i,job:j.jobNumber});
+    ['invoiceAmount','quoteAmount','depositAmount'].forEach(k=>{if(j[k]!=='' && j[k]!=null && (!Number.isFinite(Number(j[k])) || Number(j[k])<0)) issues.push({severity:'high',type:'invalid_amount',field:k,value:j[k],job:j.jobNumber});});
+    if(j.status==='paid' && !j.paidDate) issues.push({severity:'medium',type:'missing_paid_date',job:j.jobNumber});
+    if(j.status==='overdue' && !(Number(j.invoiceAmount)>0)) issues.push({severity:'medium',type:'overdue_without_invoice',job:j.jobNumber});
+  });
+  const counts={jobs:(jobs||[]).length,clients:(clients||[]).length,expenses:(expenses||[]).length,kmlog:(kmLog||[]).length,issues:issues.length};
+  return {ok:issues.length===0,counts,issues,generatedAt:new Date().toISOString()};
+};
+
 window.getSyncHealth=async function(){
   const cloud=await SB.getAll();
   const local={savedAt:Number(STORE.get('savedAt'))||0,manifest:STORE.get('syncManifest')};
@@ -1763,8 +1777,9 @@ async function verifyAndRepairSync(){
     const beforeLocal=kmLog.length, beforeCloud=cloudKm.length;
     const merged=_mergeRecords(kmLog,cloudKm);
     const health=await getSyncHealth();
+    const audit=runDataIntegrityAudit();
     const changed=merged.length!==beforeLocal || merged.length!==beforeCloud || (health.mismatches||[]).length>0;
-    if(!changed){ updateSyncStatus('online'); showToast('✓ All datasets match cloud — no repair needed','success'); return; }
+    if(!changed){ updateSyncStatus('online'); showToast(audit.ok?'✓ Cloud verified — no repair needed':'⚠ Cloud verified · '+audit.issues.length+' data issues need review','warn'); return; }
     const detail=`Local km rows: ${beforeLocal}\nCloud km rows: ${beforeCloud}\nSafe merged rows: ${merged.length}\nMismatched datasets: ${(health.mismatches||[]).join(', ')||'legacy cloud (no manifest)'}\n\nOnly the kilometre log will be merged. Jobs, clients, invoices, quotes and expenses will not be overwritten.`;
     if(!confirm('Sync health check found a difference.\n\n'+detail+'\n\nRepair the kilometre log now?')){ updateSyncStatus('online'); return; }
     const ok=await SB.set('kmlog',merged);
