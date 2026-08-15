@@ -8,6 +8,7 @@ import Invoices from './pages/Invoices';
 import Financials from './pages/Financials';
 import Profitability from './pages/Profitability';
 import Settings from './pages/Settings';
+import WebsiteLeads from './pages/WebsiteLeads';
 
 export default function App() {
   return (
@@ -22,6 +23,7 @@ export default function App() {
         <Route path="/financials" element={<Financials />} />
         <Route path="/profitability" element={<Profitability />} />
         <Route path="/settings" element={<Settings />} />
+        <Route path="/website-leads" element={<WebsiteLeads />} />
       </Routes>
     </BrowserRouter>
   );

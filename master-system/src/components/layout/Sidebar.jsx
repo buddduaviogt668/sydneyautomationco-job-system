@@ -3,7 +3,7 @@ import { motion } from 'framer-motion';
 import {
   LayoutDashboard, Briefcase, FileText, Users, Receipt,
   TrendingUp, BarChart3, ShoppingCart, Settings, Wrench,
-  MapPin, Zap, ChevronRight, AlertCircle, Clock, Star
+  MapPin, Zap, ChevronRight, AlertCircle, Clock, Star, Globe2
 } from 'lucide-react';
 import { useStore } from '../../store/useStore';
 
@@ -14,6 +14,7 @@ const NAV = [
   ]},
   { label: 'WORK', items: [
     { to: '/jobs', icon: Briefcase, label: 'Jobs', badgeKey: 'jobs' },
+    { to: '/website-leads', icon: Globe2, label: 'Website Leads' },
     { to: '/quotes', icon: FileText, label: 'Quotes', badgeKey: 'quotes' },
     { to: '/invoices', icon: Receipt, label: 'Invoices', badgeKey: 'overdue' },
     { to: '/quote-builder', icon: Zap, label: 'Quote Builder', highlight: true },
