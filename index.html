@@ -16088,7 +16088,9 @@ function printQuoteDoc(jobId){
   d.close();
 }
 function printInvoiceDoc(jobId){
-  generateInvoicePDF(jobId);
+  // Canonical path: every final-invoice button opens the same editor before PDF generation.
+  // This prevents direct-render buttons from using stale lines, GST, or payment totals.
+  openInvoiceLineEditor(jobId);
   return;
   var invNum=j.invoiceNumber||j.jobNumber;
   var invAmt=Number(j.invoiceAmount)||Number(j.quoteAmount)||0;
@@ -16163,7 +16165,8 @@ function printInvoiceDoc(jobId){
 
 // ─── DEPOSIT INVOICE PDF ───────────────────────────────────────────────────────
 function printDepositInvoiceDoc(jobId){
-  generateInvoicePDF(jobId, 'deposit');
+  // Canonical deposit path: edit/confirm first, then generate the shared PDF renderer.
+  openDepositInvoiceEditor(jobId);
 }
 
 // ─── VEHICLE KM LOG ───────────────────────────────────────────────────────────
