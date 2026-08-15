@@ -5334,6 +5334,8 @@ function renderJobDetail(id){
 function saveJobEdit(id){
   const j=jobs.find(x=>x.id===id);
   if(!j)return;
+  const proposedInvoice=document.getElementById('je-invnum')?.value.trim()||'';
+  if(proposedInvoice && !_invoiceRefAvailable(proposedInvoice,j.id)) return;
   const clientId=document.getElementById('je-client')?.value;
   if(!clientId){alert('Please select a client.');return;}
   j.jobNumber     = document.getElementById('je-jobnum')?.value.trim()||j.jobNumber;
