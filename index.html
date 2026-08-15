@@ -21584,6 +21584,32 @@ function startAutoIntervals(){
   }, AUTO_BACKUP_MS);
 }
 
+
+let _syncRetryTimer = null;
+function scheduleVerifiedSyncRetry(){
+  if(!navigator.onLine) return;
+  clearTimeout(_syncRetryTimer);
+  _syncRetryTimer=setTimeout(async()=>{
+    try{
+      updateSyncStatus('syncing');
+      await _pushToSupabase();
+      showToast('☁ Connection restored — cloud sync verified','success');
+    }catch(e){
+      updateSyncStatus('error');
+      console.warn('Reconnect sync deferred:',e.message);
+    }
+  },1200);
+}
+window.addEventListener('offline',()=>updateSyncStatus('offline'));
+window.addEventListener('online',()=>scheduleVerifiedSyncRetry());
+document.addEventListener('visibilitychange',()=>{
+  if(document.visibilityState==='visible' && navigator.onLine){
+    getSyncHealth().then(h=>{
+      if((h.mismatches||[]).length) showToast('⚠ Cloud changed elsewhere — pull and review before editing','warn');
+    }).catch(()=>{});
+  }
+});
+
 function updateAutoSaveStatus(){
   const el = document.getElementById('auto-save-status');
   const saveStr = _lastAutoSave ? 'Saved '+_lastAutoSave.toLocaleTimeString('en-AU',{hour:'2-digit',minute:'2-digit'}) : 'Auto-save: 5 min';
