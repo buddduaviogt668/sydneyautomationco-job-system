@@ -443,7 +443,7 @@
     <div>
       <div style="color:#fff;font-size:15px;font-weight:800;display:flex;align-items:center;gap:8px">✦ AI Business Advisor</div>
       <div style="color:#6366f1;font-size:11px;font-weight:600;margin-top:2px;font-family:'DM Mono',monospace">Sydney Automation Co.</div>
-    <div style="font-size:10px;background:#f59e0b;color:#0f172a;border-radius:4px;padding:2px 7px;font-weight:800;letter-spacing:0.5px;display:inline-block;margin-top:4px">v31 — Quotes + Excel Import</div>
+    <div style="font-size:10px;background:#f59e0b;color:#0f172a;border-radius:4px;padding:2px 7px;font-weight:800;letter-spacing:0.5px;display:inline-block;margin-top:4px">v32 — Integrity + Quotes + Excel Import</div>
     </div>
     <button onclick="toggleAIPanel()" style="background:#1e293b;border:none;color:#94a3b8;width:32px;height:32px;border-radius:8px;font-size:18px;cursor:pointer;display:flex;align-items:center;justify-content:center">×</button>
   </div>
@@ -766,6 +766,7 @@
     <div style="display:flex;gap:4px;margin-top:4px">
       <button onclick="forcePullFromCloud()" title="Pull latest data from cloud" style="flex:1;background:#0c2a4a;border:none;border-radius:6px;color:#60a5fa;padding:5px 0;font-size:10px;font-weight:700;cursor:pointer">⬇ Pull</button>
       <button onclick="forcePushToCloud()" title="Push local data to cloud" style="flex:1;background:#0c2a4a;border:none;border-radius:6px;color:#60a5fa;padding:5px 0;font-size:10px;font-weight:700;cursor:pointer">⬆ Push</button>
+      <button onclick="verifyAndRepairSync()" title="Verify datasets and repair safe append-only logs" style="flex:1;background:#0c2a4a;border:none;border-radius:6px;color:#a7f3d0;padding:5px 0;font-size:10px;font-weight:700;cursor:pointer">✓ Verify</button>
     </div>
     <div id="save-flash" style="text-align: center; font-size: 11px; color: rgb(74, 222, 128); font-weight: 600; margin-top: 4px; opacity: 0; transition: opacity 0.3s;">✓ Saved to file</div>
   </div>
@@ -1096,6 +1097,10 @@ Programming of C-Bus shutter relay control…</div>
 const SUPABASE_URL = 'https://efttcebtqulrfbvduhit.supabase.co';
 const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImVmdHRjZWJ0cXVscmZidmR1aGl0Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzIxMDU1MDEsImV4cCI6MjA4NzY4MTUwMX0.LzYhiEy8wGsdiqJ4XNAiP-dqkfT-r_xvhsa_Vzh65s8';
 
+// v32 integrity foundation: every cloud sync is now auditable per dataset.
+const SYNC_SCHEMA_VERSION = 'v32-integrity-1';
+const SYNC_DATA_KEYS = ['clients','jobs','projects','leads','counters','kmlog','expenses','taxman','cfg','partsdb','timesheets','recurring','supInvoices'];
+
 const SB_HEADERS = {
   'apikey': SUPABASE_KEY,
   'Authorization': `Bearer ${SUPABASE_KEY}`,
@@ -1130,8 +1135,10 @@ const SB = {
       if (!res.ok) {
         const err = await res.text();
         console.warn('Supabase write error:', res.status, err);
+        return false;
       }
-    } catch(e) { console.warn('Supabase write failed:', e); }
+      return true;
+    } catch(e) { console.warn('Supabase write failed:', e); return false; }
   },
   async getAll() {
     try {
@@ -1150,6 +1157,77 @@ const SB = {
   }
 };
 
+
+// ─── DATA INTEGRITY / CONFLICT UTILITIES ─────────────────────────────────────
+// Canonical JSON makes checksums stable across browsers and formatting changes.
+function _canonical(v){
+  if(Array.isArray(v)) return '['+v.map(_canonical).join(',')+']';
+  if(v && typeof v==='object') return '{'+Object.keys(v).sort().map(k=>JSON.stringify(k)+':'+_canonical(v[k])).join(',')+'}';
+  return JSON.stringify(v);
+}
+function _checksum(v){
+  const text=_canonical(v); let h=2166136261;
+  for(let i=0;i<text.length;i++){ h^=text.charCodeAt(i); h=Math.imul(h,16777619); }
+  return ('00000000'+(h>>>0).toString(16)).slice(-8);
+}
+function _recordKey(x, i){ return String(x?.id ?? x?.jobNumber ?? x?.invoiceNumber ?? x?.jobRef ?? ('row_'+i)); }
+function _mergeRecords(localValue, cloudValue){
+  if(!Array.isArray(localValue) || !Array.isArray(cloudValue)) return localValue ?? cloudValue;
+  const out=new Map();
+  cloudValue.forEach((x,i)=>out.set(_recordKey(x,i),x));
+  localValue.forEach((x,i)=>out.set(_recordKey(x,i),x));
+  return Array.from(out.values());
+}
+function _datasetValue(k){
+  if(k==='clients') return clients;
+  if(k==='jobs') return _jobsForCloud(jobs);
+  if(k==='projects') return projects;
+  if(k==='leads') return leads;
+  if(k==='counters') return counters;
+  if(k==='kmlog') return kmLog;
+  if(k==='expenses') return expenses;
+  if(k==='taxman') return taxManual;
+  if(k==='cfg') return CFG;
+  if(k==='partsdb') return PARTS_DB;
+  if(k==='timesheets') return timesheets;
+  if(k==='recurring') return recurringJobs;
+  if(k==='supInvoices') return (window._supInvoices||[]).map(i=>{const c={...i};delete c._fileObj;return c;});
+  return STORE.get(k);
+}
+function _buildSyncManifest(savedAt){
+  const datasets={};
+  SYNC_DATA_KEYS.forEach(k=>{const v=_datasetValue(k); datasets[k]={count:Array.isArray(v)?v.length:null,checksum:_checksum(v)};});
+  return {schema:SYNC_SCHEMA_VERSION,savedAt:Number(savedAt)||Date.now(),datasets};
+}
+function _manifestSummary(m){
+  if(!m) return 'no manifest';
+  const bad=Object.entries(m.datasets||{}).filter(([,x])=>!x?.checksum).map(([k])=>k);
+  return `${m.schema||'legacy'} · ${Object.keys(m.datasets||{}).length} datasets${bad.length?' · incomplete':''}`;
+}
+window.runDataIntegrityAudit=function(){
+  const issues=[];
+  const dup=(arr,key,label)=>{const seen=new Map();(arr||[]).forEach((x,i)=>{const v=x?.[key];if(!v)return; if(seen.has(v)) issues.push({severity:'high',type:'duplicate',field:label,value:v,rows:[seen.get(v),i]}); else seen.set(v,i);});};
+  dup(jobs,'id','job id'); dup(jobs,'jobNumber','job number'); dup(jobs,'invoiceNumber','invoice number'); dup(clients,'id','client id'); dup(expenses,'id','expense id'); dup(kmLog,'id','kilometre id');
+  (jobs||[]).forEach((j,i)=>{
+    if(j.clientId && !clients.some(c=>c.id===j.clientId)) issues.push({severity:'high',type:'orphan',field:'clientId',value:j.clientId,row:i,job:j.jobNumber});
+    ['invoiceAmount','quoteAmount','depositAmount'].forEach(k=>{if(j[k]!=='' && j[k]!=null && (!Number.isFinite(Number(j[k])) || Number(j[k])<0)) issues.push({severity:'high',type:'invalid_amount',field:k,value:j[k],job:j.jobNumber});});
+    if(j.status==='paid' && !j.paidDate) issues.push({severity:'medium',type:'missing_paid_date',job:j.jobNumber});
+    if(j.status==='overdue' && !(Number(j.invoiceAmount)>0)) issues.push({severity:'medium',type:'overdue_without_invoice',job:j.jobNumber});
+  });
+  const counts={jobs:(jobs||[]).length,clients:(clients||[]).length,expenses:(expenses||[]).length,kmlog:(kmLog||[]).length,issues:issues.length};
+  return {ok:issues.length===0,counts,issues,generatedAt:new Date().toISOString()};
+};
+
+window.getSyncHealth=async function(){
+  const cloud=await SB.getAll();
+  const local={savedAt:Number(STORE.get('savedAt'))||0,manifest:STORE.get('syncManifest')};
+  const cloudManifest=cloud?.syncManifest||null;
+  const localChecks=_buildSyncManifest(local.savedAt);
+  const mismatches=[];
+  SYNC_DATA_KEYS.forEach(k=>{const a=localChecks.datasets[k]?.checksum,b=cloudManifest?.datasets?.[k]?.checksum;if(b&&a!==b)mismatches.push(k);});
+  return {online:Object.keys(cloud||{}).length>0,localSavedAt:local.savedAt,cloudSavedAt:Number(cloud?.savedAt)||0,localManifest:_manifestSummary(local.manifest),cloudManifest:_manifestSummary(cloudManifest),mismatches,localJobCount:Array.isArray(jobs)?jobs.length:0,cloudJobCount:Array.isArray(cloud?.jobs)?cloud.jobs.length:null,localKmCount:kmLog.length,cloudKmCount:Array.isArray(cloud?.kmlog)?cloud.kmlog.length:null};
+};
+
 const STORE = {
   get(k){try{return JSON.parse(localStorage.getItem('sac:'+k))||null}catch{return null}},
   set(k,v){
@@ -1163,8 +1241,9 @@ const STORE = {
         }
       }
     }
-    // Also push to Supabase asynchronously
-    SB.set(k, v).catch(()=>{});
+    // Cloud writes are intentionally handled only by _pushToSupabase().
+    // Keeping this local-only prevents per-key writes from racing the
+    // verified manifest transaction and silently overwriting another device.
   },
   _quotaWarned: false
 };
@@ -1370,7 +1449,8 @@ async function getDataPayload() {
     recurringJobs:(typeof recurringJobs!== 'undefined') ? recurringJobs: [],
     partsdb:      (typeof PARTS_DB     !== 'undefined') ? PARTS_DB     : [],
     websiteLeads: (typeof websiteLeads !== 'undefined') ? websiteLeads : [],
-    supInvoices:  supInvoicesWithFiles
+    supInvoices:  supInvoicesWithFiles,
+    syncManifest: _buildSyncManifest(Date.now())
   };
 }
 
@@ -1536,6 +1616,7 @@ function restoreFromData(data) {
     try { localStorage.setItem('sac:supInvoices', JSON.stringify(cleaned)); } catch(e) {}
   }
   if (data.savedAt) STORE.set('savedAt', String(data.savedAt));
+  if (data.syncManifest) STORE.set('syncManifest', data.syncManifest);
 }
 
 
@@ -1568,7 +1649,8 @@ function _scanAndPersistOverdue(){
   });
   if(changed){
     STORE.set('jobs', jobs);
-    SB.set('jobs', _jobsForCloud(jobs)).catch(()=>{});
+    // Do not write this dataset directly. The next verified save/push owns
+    // the cloud transaction and will detect conflicts before writing.
   }
 }
 
@@ -1590,39 +1672,71 @@ function _syncCounters(){
   if(changed){ STORE.set('counters', counters); }
 }
 
+function _migrateExpenseProfitConfig(cfg){
+  if(!cfg || typeof cfg!=='object') return cfg;
+  if(Array.isArray(cfg.overheads)){
+    const internet=cfg.overheads.find(o=>o.name==='Internet' && Number(o.monthly)===110);
+    if(internet) internet.monthly=114;
+    const ms=cfg.overheads.find(o=>o.name==='Software / Subscriptions' && Number(o.monthly)===9.9);
+    if(ms){ ms.name='Microsoft 365'; ms.monthly=9.9; }
+  }
+  if(Array.isArray(cfg.startupItems)) cfg.startupItems.forEach(item=>{
+    const n=String(item.name||'').toLowerCase();
+    if(n.includes('sticker')||n.includes('polo')||n.includes('shirt')||n.includes('jacket')||n.includes('printing')) item.recoverOver=9999;
+  });
+  return cfg;
+}
+
 function _applySbData(sbData){
   if(!sbData) return;
   if (sbData.clients)   { clients   = sbData.clients;   localStorage.setItem('sac:clients',   JSON.stringify(clients)); }
   if (sbData.jobs)      { _jobGroupCache = null; jobs      = sbData.jobs;       localStorage.setItem('sac:jobs',      JSON.stringify(jobs)); }
   if (sbData.leads)     { leads     = sbData.leads;      localStorage.setItem('sac:leads',     JSON.stringify(leads)); }
   if (sbData.counters)  { counters  = sbData.counters;   localStorage.setItem('sac:counters',  JSON.stringify(counters)); }
-  if (sbData.kmlog)     { kmLog     = sbData.kmlog;      localStorage.setItem('sac:kmlog',     JSON.stringify(kmLog)); }
+  if (sbData.kmlog)     { kmLog     = _mergeRecords([], sbData.kmlog); localStorage.setItem('sac:kmlog', JSON.stringify(kmLog)); }
   if (sbData.expenses)  { expenses  = sbData.expenses;   localStorage.setItem('sac:expenses',  JSON.stringify(expenses)); }
   if (sbData.taxman)    { taxManual = sbData.taxman;      localStorage.setItem('sac:taxman',    JSON.stringify(taxManual)); }
   if (sbData.supInvoices){ window._supInvoices = sbData.supInvoices; localStorage.setItem('sac:supInvoices', JSON.stringify(sbData.supInvoices)); }
-  if (sbData.cfg)       { localStorage.setItem('sac:cfg', JSON.stringify(sbData.cfg)); reloadCFG(); }
+  if (sbData.cfg)       { const _cloudCfg=_migrateExpenseProfitConfig(sbData.cfg); localStorage.setItem('sac:cfg', JSON.stringify(_cloudCfg)); reloadCFG(); }
   if (sbData.partsdb)   { const _pd=_ensurePartsArray(sbData.partsdb); if(_pd){ PARTS_DB=_pd.map(p=>({supplier:'',...p})); localStorage.setItem('sac:partsdb',JSON.stringify(PARTS_DB)); } }
   if (sbData.projects)  { projects  = sbData.projects;   STORE.set('projects',  projects); }
   if (sbData.timesheets){ timesheets = sbData.timesheets; localStorage.setItem('sac:timesheets', JSON.stringify(timesheets)); }
   if (sbData.recurring) { recurringJobs = sbData.recurring; localStorage.setItem('sac:recurring', JSON.stringify(recurringJobs)); }
   if (sbData.savedAt)   { STORE.set('savedAt', String(sbData.savedAt)); }
+  if (sbData.syncManifest) { STORE.set('syncManifest', sbData.syncManifest); }
   // Auto-fix overdue statuses after loading
   _scanAndPersistOverdue();
   _lastSyncTs = new Date();
 }
 
 async function _pushToSupabase(){
-  const keys = ['clients','jobs','projects','leads','counters','kmlog','expenses','taxman','cfg','partsdb','timesheets','recurring','supInvoices'];
   const now = Date.now();
-  await SB.set('savedAt', now);
-  STORE.set('savedAt', String(now));
-  for(const k of keys){
-    const v = k==='supInvoices'
-      ? (window._supInvoices||[]).map(i=>{const c={...i};delete c._fileObj;c.fileData=!!i.fileData;return c;})
-      : k==='jobs' ? _jobsForCloud(jobs)
-      : STORE.get(k) || (k==='clients'?clients:k==='counters'?counters:k==='kmlog'?kmLog:k==='expenses'?expenses:k==='taxman'?taxManual:null);
-    if(v !== null && v !== undefined) await SB.set(k, v);
+  const localLast = Number(STORE.get('savedAt')) || 0;
+  const localManifest = STORE.get('syncManifest') || null;
+  const cloudBefore = await SB.getAll();
+  const cloudLast = Number(cloudBefore?.savedAt) || 0;
+  const cloudManifest = cloudBefore?.syncManifest || null;
+  const cloudChangedElsewhere = !!(cloudLast > localLast && localManifest && cloudManifest && SYNC_DATA_KEYS.some(k=>localManifest.datasets?.[k]?.checksum !== cloudManifest.datasets?.[k]?.checksum));
+  if(cloudChangedElsewhere && !window._allowForcePushOnce){
+    throw new Error('Cloud changed on another device. Pull and review the conflict before pushing local changes.');
   }
+  window._allowForcePushOnce = false;
+  // Merge append-only logs by stable id so a phone trip cannot be erased by a laptop snapshot.
+  if(Array.isArray(cloudBefore?.kmlog)) kmLog = _mergeRecords(kmLog, cloudBefore.kmlog);
+  const values={};
+  SYNC_DATA_KEYS.forEach(k=>{ values[k]=_datasetValue(k); });
+  const manifest=_buildSyncManifest(now);
+  const results=[];
+  for(const k of SYNC_DATA_KEYS){ if(values[k]!==null && values[k]!==undefined) results.push(await SB.set(k, values[k])); }
+  results.push(await SB.set('savedAt', now));
+  results.push(await SB.set('syncManifest', manifest));
+  if(results.some(x=>x!==true)) throw new Error('One or more cloud dataset writes failed; local data was not marked synchronised.');
+  STORE.set('savedAt', String(now));
+  STORE.set('syncManifest', manifest);
+  const cloudAfter=await SB.getAll();
+  const verify=cloudAfter?.syncManifest;
+  const failed=SYNC_DATA_KEYS.filter(k=>verify?.datasets?.[k]?.checksum!==manifest.datasets[k]?.checksum);
+  if(failed.length) throw new Error('Cloud verification failed for: '+failed.join(', '));
   _lastSyncTs = new Date();
   updateSyncStatus('online');
 }
@@ -1670,6 +1784,7 @@ async function forcePushToCloud(){
   if(!confirm('Push all local data to cloud?\n\nThis will overwrite the cloud with your current local data.\n\nUse this if the cloud is out of date.')) return;
   updateSyncStatus('syncing');
   try {
+    window._allowForcePushOnce = true;
     await _pushToSupabase();
     showToast('☁ Pushed to cloud — ' + jobs.length + ' jobs, ' + clients.length + ' clients', 'success');
     updateSyncStatus('online');
@@ -1677,6 +1792,32 @@ async function forcePushToCloud(){
     showToast('⚠ Push failed: ' + e.message, 'error');
     updateSyncStatus('error');
   }
+}
+
+
+// Safe repair flow: only merges append-only kilometre logs, never overwrites jobs or money.
+async function verifyAndRepairSync(){
+  updateSyncStatus('syncing');
+  try{
+    const cloud=await SB.getAll();
+    const cloudKm=Array.isArray(cloud?.kmlog)?cloud.kmlog:[];
+    const beforeLocal=kmLog.length, beforeCloud=cloudKm.length;
+    const merged=_mergeRecords(kmLog,cloudKm);
+    const health=await getSyncHealth();
+    const audit=runDataIntegrityAudit();
+    const changed=merged.length!==beforeLocal || merged.length!==beforeCloud || (health.mismatches||[]).length>0;
+    if(!changed){ updateSyncStatus('online'); showToast(audit.ok?'✓ Cloud verified — no repair needed':'⚠ Cloud verified · '+audit.issues.length+' data issues need review','warn'); return; }
+    const detail=`Local km rows: ${beforeLocal}\nCloud km rows: ${beforeCloud}\nSafe merged rows: ${merged.length}\nMismatched datasets: ${(health.mismatches||[]).join(', ')||'legacy cloud (no manifest)'}\n\nOnly the kilometre log will be merged. Jobs, clients, invoices, quotes and expenses will not be overwritten.`;
+    if(!confirm('Sync health check found a difference.\n\n'+detail+'\n\nRepair the kilometre log now?')){ updateSyncStatus('online'); return; }
+    const ok=await SB.set('kmlog',merged);
+    if(ok!==true) throw new Error('Cloud kilometre-log write was rejected');
+    kmLog=merged; localStorage.setItem('sac:kmlog',JSON.stringify(kmLog));
+    const now=Date.now(), manifest=_buildSyncManifest(now);
+    if((await SB.set('savedAt',now))!==true || (await SB.set('syncManifest',manifest))!==true) throw new Error('Cloud verification metadata could not be saved');
+    STORE.set('savedAt',String(now)); STORE.set('syncManifest',manifest);
+    _lastSyncTs=new Date(); updateSyncStatus('online'); renderNav(); renderMain();
+    showToast('✓ Kilometre log repaired and cloud-verified ('+merged.length+' unique trips)','success');
+  }catch(e){ console.error('verifyAndRepairSync',e); updateSyncStatus('error'); showToast('⚠ Sync repair failed: '+e.message,'error'); }
 }
 
 // ─── END SYNC HELPERS ─────────────────────────────────────────────────────────
@@ -1791,31 +1932,16 @@ const save = () => {
   STORE.set('timesheets',timesheets);
   saveToFile(); // async, non-blocking
   showSaveFlash();
-  // Push to Supabase (non-blocking) — track failures
-  const _saveTs = Date.now();
-  Promise.all([
-    SB.set('savedAt', _saveTs),
-    SB.set('clients', clients),
-    SB.set('jobs', _jobsForCloud(jobs)),
-    SB.set('projects', projects),
-    SB.set('counters', counters),
-    SB.set('kmlog', kmLog),
-    SB.set('expenses', expenses),
-    SB.set('taxman', taxManual),
-    SB.set('leads', leads),
-    SB.set('recurring', recurringJobs),
-    SB.set('timesheets', timesheets),
-    SB.set('cfg', CFG),
-    SB.set('partsdb', PARTS_DB),
-    SB.set('supInvoices', (window._supInvoices||[]).map(i=>{const c={...i};delete c._fileObj;c.fileData=!!i.fileData;return c;})),
-  ]).then(()=>{
+  // All automatic saves use the verified path: merge safe append-only data,
+  // write each dataset, write a manifest, then read back and verify checksums.
+  _pushToSupabase().then(()=>{
     _sbOnline = true;
-    _lastSyncTs = new Date();
     updateSyncStatus('online');
   }).catch(e => {
     _sbOnline = false;
-    updateSyncStatus('offline');
-    console.warn('Supabase sync error:', e);
+    updateSyncStatus('error');
+    console.warn('Verified Supabase sync error:', e);
+    showToast('⚠ Cloud sync needs attention — local data is preserved','warn');
   });
 };
 
@@ -2235,20 +2361,25 @@ const CFG_DEFAULTS = {
   // ── INTEGRATIONS ──
   hubspotToken:'',
   stripePaymentLinkBase:'https://buy.stripe.com/5kQ00i8o96rQ72R6BQ00000',
+  stripeCardFeeRate:0.017, stripeCardFeeFixed:0.30, stripeCardSurchargeEnabled:true, stripeCardSurchargeEnd:'2026-10-01',
   twilioSid:'', twilioToken:'', twilioFrom:'',
   xeroEmail:'',
   calendarAutoAdd:true,
   incomeMin:60000, incomeComfort:90000, incomeStretch:120000,
+  businessStructure:'sole_trader',
+  taxReserveRate:0.30,
+  retirementReserveRate:0.115,
+  ownerDrawMonthly:6000,
   overheads:[
     {id:'oh1',name:'Business Insurance',monthly:55.30},
     {id:'oh2',name:'Phone',monthly:55.00},
-    {id:'oh3',name:'Internet',monthly:110.00},
+    {id:'oh3',name:'Internet',monthly:114.00},
     {id:'oh4',name:'Rego & Car Insurance',monthly:198.33},
     {id:'oh5',name:'Licence Fees',monthly:3.80},
     {id:'oh6',name:'Domain Name',monthly:2.18},
     {id:'oh7',name:'Website Hosting',monthly:3.29},
     {id:'oh8',name:'Business Name Registration',monthly:3.67},
-    {id:'oh9',name:'Software / Subscriptions',monthly:0},
+    {id:'oh9',name:'Microsoft 365',monthly:9.90},
     {id:'oh10',name:'Other',monthly:0},
   ],
   suppliers:[
@@ -2279,14 +2410,32 @@ const CFG_DEFAULTS = {
   // Pay run log
   payRuns:[],
   startupItems:[
-    {id:'su1',name:'Stickers (service call)',total:50,recoverOver:20},
-    {id:'su2',name:'Polo shirts',total:40,recoverOver:20},
-    {id:'su3',name:'Shirt printing / logo',total:177,recoverOver:20},
+    {id:'su1',name:'Stickers (service call)',total:50,recoverOver:9999},
+    {id:'su2',name:'Polo shirts',total:40,recoverOver:9999},
+    {id:'su3',name:'Shirt printing / logo',total:177,recoverOver:9999},
   ]
 };
 
 // Load CFG from storage, merge with defaults to pick up any new keys
 let _storedCFG = STORE.get('cfg') || {};
+// Expense/profitability correction migration: update only the old untouched defaults.
+// Historical expense rows remain unchanged; this affects the current management model.
+(function migrateExpenseProfitDefaults(){
+  let dirty=false;
+  if(Array.isArray(_storedCFG.overheads)){
+    const internet=_storedCFG.overheads.find(o=>o.name==='Internet' && Number(o.monthly)===110);
+    if(internet){ internet.monthly=114; dirty=true; }
+    const ms=_storedCFG.overheads.find(o=>o.name==='Software / Subscriptions' && Number(o.monthly)===9.9);
+    if(ms){ ms.name='Microsoft 365'; ms.monthly=9.9; dirty=true; }
+  }
+  if(Array.isArray(_storedCFG.startupItems)){
+    _storedCFG.startupItems.forEach(item=>{
+      const n=String(item.name||'').toLowerCase();
+      if((n.includes('sticker')||n.includes('polo')||n.includes('shirt')||n.includes('jacket')||n.includes('printing')) && Number(item.recoverOver)!==9999){ item.recoverOver=9999; dirty=true; }
+    });
+  }
+  if(dirty) STORE.set('cfg', _storedCFG);
+})();
 // Force GST migration: if stored config has gst:0 and no gstRegistered, upgrade to GST registered
 if (_storedCFG.gst === 0 && _storedCFG.gstRegistered === undefined) {
   _storedCFG.gst = 0.1;
@@ -2358,6 +2507,10 @@ let CFG = Object.assign({}, CFG_DEFAULTS, _storedCFG,
    superRate:      _storedCFG.superRate       || 11.5,
    superFund:      _storedCFG.superFund       || 'Australian Retirement Trust',
    stripePaymentLinkBase: _storedCFG.stripePaymentLinkBase || 'https://buy.stripe.com/5kQ00i8o96rQ72R6BQ00000',
+   stripeCardFeeRate: _storedCFG.stripeCardFeeRate != null ? Number(_storedCFG.stripeCardFeeRate) : 0.017,
+   stripeCardFeeFixed: _storedCFG.stripeCardFeeFixed != null ? Number(_storedCFG.stripeCardFeeFixed) : 0.30,
+   stripeCardSurchargeEnabled: _storedCFG.stripeCardSurchargeEnabled !== false,
+   stripeCardSurchargeEnd: _storedCFG.stripeCardSurchargeEnd || '2026-10-01',
    googleReviewUrl: _storedCFG.googleReviewUrl || 'https://g.page/r/CQK7ChOgqNZ2EBM/review',
    websiteLeadsUrl:   _storedCFG.websiteLeadsUrl   || '',
    websiteLeadsToken: _storedCFG.websiteLeadsToken || '',
@@ -2394,6 +2547,29 @@ function unlockBankDetails(){
   showToast('Bank details unlocked — edit carefully then Save Settings','warn');
 }
 
+// ─── SOLE-TRADER CASH PLANNING HELPERS ───────────────────────────────────────
+function gstComponentInclusive(amount){ const rate=Number(CFG.gst||0.1); return CFG.gstRegistered===false?0:(Number(amount)||0)*rate/(1+rate); }
+function _planningMonthKey(){ return new Date().toISOString().slice(0,7); }
+function soleTraderPlanning(){
+  const m=_planningMonthKey();
+  const paidMonth=jobs.filter(j=>j.status==='paid' && (j.paidDate||'').startsWith(m));
+  const cashCollected=paidMonth.reduce((s,j)=>s+jobRevenue(j),0);
+  const gstOnSales=gstComponentInclusive(cashCollected);
+  const expenseMonth=expenses.filter(e=>(e.date||'').startsWith(m)).reduce((s,e)=>s+(Number(e.amount)||0),0);
+  const gstOnExpenses=expenses.filter(e=>(e.date||'').startsWith(m) && e.taxCat!=='other').reduce((s,e)=>s+gstComponentInclusive(e.amount),0);
+  const gstReserve=Math.max(0,gstOnSales-gstOnExpenses);
+  const operatingCosts=expenseMonth+overheadMonthlyTotal();
+  const cashExGst=Math.max(0,cashCollected-gstReserve);
+  const estimatedProfit=Math.max(0,cashExGst-operatingCosts);
+  const taxReserve=estimatedProfit*(Number(CFG.taxReserveRate)||0.30);
+  const drawTarget=Number(CFG.ownerDrawMonthly||CFG.payGross||6000);
+  const retirementReserve=drawTarget*(Number(CFG.retirementReserveRate)||0.115);
+  const availableAfterReserves=Math.max(0,cashCollected-gstReserve-expenseMonth-overheadMonthlyTotal()-taxReserve-retirementReserve);
+  const weeklyTarget=drawTarget*12/52;
+  const safeWeekly=Math.max(0,Math.min(weeklyTarget,availableAfterReserves));
+  return {month:m,cashCollected,gstOnSales,gstOnExpenses,gstReserve,expenseMonth,operatingCosts,cashExGst,estimatedProfit,taxReserve,drawTarget,retirementReserve,availableAfterReserves,safeWeekly};
+}
+
 // ─── DYNAMIC PRICING HELPERS ─────────────────────────────────────────────────
 function partYourCost(p){ return p && p.buyPrice ? p.buyPrice * (1 + CFG.supplierMargin) : 0; }
 function partSellPrice(p){ return partYourCost(p) / (1 - CFG.markup); }
@@ -2408,12 +2584,12 @@ function jobsThisMonthCount(){
 }
 function overheadPerJob(){ return overheadMonthlyTotal() / jobsThisMonthCount(); }
 function defaultTravelCost(km, tolls){ return (km * 2 * CFG.atoRate) + tolls; }
-function totalFixedPerJob(km, tolls){ return overheadPerJob() + startupRecoveryPerJob() + defaultTravelCost(km||CFG.defaultKm, tolls!=null?tolls:CFG.defaultTolls); }
+function totalFixedPerJob(km, tolls){ return overheadPerJob() + defaultTravelCost(km||CFG.defaultKm, tolls!=null?tolls:CFG.defaultTolls); }
 
 let currentScreen = 'dashboard';
-const APP_VERSION = 'v31';
+const APP_VERSION = 'v32';
 window.addEventListener('DOMContentLoaded', () => {
-  setTimeout(() => showToast('Running v31 — Quotes + Excel Import active', 'success'), 1200);
+  setTimeout(() => showToast('Running v32 — Integrity + Quotes + Excel Import active', 'success'), 1200);
 });
 let modalStack = [];
 let calYear = new Date().getFullYear();
@@ -4058,7 +4234,7 @@ function renderInlineQuoteBuilder(){
   const rawTotal=NQB.callout+partsSell+labourSell+frtCharge;
   const minCharge=CFG.callout+(CFG.minHours*CFG.labourRate);
   const total=Math.max(rawTotal,minCharge);
-  const totalCost=partsCost+travelCost+frtCost+overheadPerJob()+startupRecoveryPerJob();
+  const totalCost=partsCost+travelCost+frtCost+overheadPerJob();
   const margin=total>0?Math.round(((total-totalCost)/total)*100):0;
   const nextNum=`SAQ_${counters.SAQ||10144}`;
   const iS=`width:100%;padding:6px 9px;border:1px solid #e2e8f0;border-radius:6px;font-size:13px;background:#fff;box-sizing:border-box;font-family:'DM Sans',sans-serif`;
@@ -5235,6 +5411,8 @@ function renderJobDetail(id){
 function saveJobEdit(id){
   const j=jobs.find(x=>x.id===id);
   if(!j)return;
+  const proposedInvoice=document.getElementById('je-invnum')?.value.trim()||'';
+  if(proposedInvoice && !_invoiceRefAvailable(proposedInvoice,j.id)) return;
   const clientId=document.getElementById('je-client')?.value;
   if(!clientId){alert('Please select a client.');return;}
   j.jobNumber     = document.getElementById('je-jobnum')?.value.trim()||j.jobNumber;
@@ -6009,6 +6187,20 @@ function renderWorkOrderModal(id){
     </div>`;
 }
 
+// ─── FINANCIAL INTEGRITY GUARDS ───────────────────────────────────────────────
+function _invoiceRefsInUse(ref, exceptId){
+  const needle=String(ref||'').trim().toLowerCase();
+  if(!needle) return [];
+  return jobs.filter(x=>x.id!==exceptId && String(x.invoiceNumber||'').trim().toLowerCase()===needle);
+}
+function _invoiceRefAvailable(ref, exceptId){
+  const clashes=_invoiceRefsInUse(ref,exceptId);
+  if(!clashes.length) return true;
+  const desc=clashes.map(x=>`${x.jobNumber||x.id} (${x.invoiceAmount||'no amount'})`).join(', ');
+  showToast(`⚠ Invoice reference already used by ${desc}. Choose a new reference.`,'error');
+  return false;
+}
+
 // ─── ACTIONS ──────────────────────────────────────────────────────────────────
 function advanceJob(id, next){
   const j=jobs.find(x=>x.id===id);
@@ -6042,6 +6234,7 @@ function advanceJob(id, next){
     if(manualNum) updates.invoiceNumber=manualNum;
     if(manualAmt) updates.invoiceAmount=manualAmt;
     if(manualDue) updates.invoiceDue=manualDue;
+    if(!_invoiceRefAvailable(updates.invoiceNumber,j.id)) return;
   }
 
   // ── PAID: auto-set paid date + prompt WhatsApp receipt confirmation ──────────
@@ -6052,6 +6245,7 @@ function advanceJob(id, next){
     const manualAmt = document.getElementById('inv-amt')?.value;
     if(manualNum) updates.invoiceNumber=manualNum;
     if(manualAmt) updates.invoiceAmount=manualAmt;
+    if(updates.invoiceNumber && !_invoiceRefAvailable(updates.invoiceNumber,j.id)) return;
   }
 
   // ── DEPOSIT PAID: auto-fill deposit date ────────────────────────────────────
@@ -7902,6 +8096,20 @@ function renderFinancials(){
       <button onclick="aiAsk('What is the minimum I need to invoice and collect this month to cover: my wage, super, PAYG tax liability, business overheads, and bills? Give me a specific dollar figure and tell me which jobs to prioritise for immediate invoicing.')" class="ai-section-btn" style="justify-content:center;padding:10px 8px;font-size:12px;background:#dc2626">✦ Minimum This Month</button>
     </div>
 
+    <!-- SOLE-TRADER CASH PLANNING -->
+    ${(()=>{const P=soleTraderPlanning(); return `<div style="background:#fff;border:1px solid #c7d2fe;border-radius:12px;padding:20px 24px;margin-bottom:20px">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap">
+        <div><div style="font-size:16px;font-weight:800;color:#1e1b4b">Sole-Trader Cash Plan</div><div style="font-size:11px;color:#64748b;margin-top:3px">Current month · management estimate, not a lodged tax result</div></div>
+        <div style="background:#eef2ff;color:#3730a3;border-radius:8px;padding:7px 10px;font-size:11px;font-weight:800">30% tax reserve · 11.5% retirement reserve</div>
+      </div>
+      <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-top:16px">
+        <div style="background:#f8fafc;border-radius:9px;padding:12px"><div style="font-size:10px;color:#64748b;text-transform:uppercase;font-weight:800">GST to reserve</div><div style="font-size:21px;font-weight:900;color:#2563eb;margin-top:4px">${fmt$(P.gstReserve)}</div><div style="font-size:10px;color:#94a3b8">sales GST less estimated credits</div></div>
+        <div style="background:#fff7ed;border-radius:9px;padding:12px"><div style="font-size:10px;color:#9a3412;text-transform:uppercase;font-weight:800">Tax reserve</div><div style="font-size:21px;font-weight:900;color:#ea580c;margin-top:4px">${fmt$(P.taxReserve)}</div><div style="font-size:10px;color:#9a3412">30% of estimated profit</div></div>
+        <div style="background:#f5f3ff;border-radius:9px;padding:12px"><div style="font-size:10px;color:#6d28d9;text-transform:uppercase;font-weight:800">Retirement reserve</div><div style="font-size:21px;font-weight:900;color:#7c3aed;margin-top:4px">${fmt$(P.retirementReserve)}</div><div style="font-size:10px;color:#6d28d9">optional monthly target</div></div>
+        <div style="background:#ecfdf5;border-radius:9px;padding:12px"><div style="font-size:10px;color:#166534;text-transform:uppercase;font-weight:800">Safe draw this week</div><div style="font-size:21px;font-weight:900;color:#059669;margin-top:4px">${fmt$(P.safeWeekly)}</div><div style="font-size:10px;color:#166534">target cap ${fmt$(P.drawTarget*12/52)}/week</div></div>
+      </div>
+      <div style="margin-top:12px;background:#f8fafc;border-radius:8px;padding:10px 12px;font-size:11px;color:#475569;line-height:1.6">The safe-draw figure is capped by your ${fmt$(P.drawTarget)}/month owner-drawing target and reduced by estimated GST, recorded expenses, recurring overhead, tax reserve, and optional retirement reserve. Keep the underlying calculation separate from your accountant’s final tax position.</div>
+    </div>`})()}
     <!-- GST THRESHOLD -->
     <div style="background:#fff;border-radius:12px;border:1px solid #e2e8f0;padding:20px 24px;margin-bottom:20px">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
@@ -8258,7 +8466,7 @@ function renderQuoteBuilderModal(jobId){
   const rawTotal=QB.callout+partsSell+labourSell+freightCharge;
   const total=Math.max(rawTotal, minCharge);
   const belowMin=rawTotal<minCharge;
-  const totalCost=partsCost+travelCost+freightCost+overheadPerJob()+startupRecoveryPerJob();
+  const totalCost=partsCost+travelCost+freightCost+overheadPerJob();
   const takeHome=total-totalCost;
   const margin=total>0?Math.round((takeHome/total)*100):0;
 
@@ -10421,9 +10629,9 @@ function renderBreakEven(){
   const ohMonthly = overheadMonthlyTotal ? overheadMonthlyTotal() : 0;
   // Use actual payGross (what you draw each month), not the minimum income target
   const wage = Number(CFG.payGross)||0;
-  const superRate = (Number(CFG.superRate)||11.5)/100;
-  const superAmt = wage * superRate;
-  const totalFixed = ohMonthly + wage + superAmt;
+  const retirementRate = Number(CFG.retirementReserveRate)||0.115;
+  const retirementAmt = wage * retirementRate;
+  const totalFixed = ohMonthly + wage + retirementAmt;
 
   // How many hours needed at labour rate
   const rate = Number(CFG.labourRate)||125;
@@ -10446,7 +10654,7 @@ function renderBreakEven(){
         <div style="background:#f8fafc;border-radius:8px;padding:12px;text-align:center">
           <div style="font-size:11px;color:#64748b;text-transform:uppercase;font-weight:700;margin-bottom:4px">Fixed Costs</div>
           <div style="font-size:22px;font-weight:900;color:#ef4444">${fmt$(totalFixed)}</div>
-          <div style="font-size:10px;color:#94a3b8">overheads + monthly drawings + super</div>
+          <div style="font-size:10px;color:#94a3b8">overheads + owner drawings + optional retirement reserve</div>
         </div>
         <div style="background:#f8fafc;border-radius:8px;padding:12px;text-align:center">
           <div style="font-size:11px;color:#64748b;text-transform:uppercase;font-weight:700;margin-bottom:4px">Hours to Cover</div>
@@ -10464,7 +10672,7 @@ function renderBreakEven(){
       </div>
       <div style="margin-top:8px;padding:8px 12px;background:#f8fafc;border-radius:8px;font-size:11px;color:#64748b;line-height:2">
         <strong style="color:#475569">Components: </strong>
-        Overheads <strong style="color:#0f172a">${fmt$(ohMonthly)}</strong> + Gross pay <strong style="color:#0f172a">${fmt$(wage)}</strong> + Super <strong style="color:#0f172a">${fmt$(superAmt)}</strong> = <strong style="color:#ef4444">${fmt$(totalFixed)}</strong>
+        Overheads <strong style="color:#0f172a">${fmt$(ohMonthly)}</strong> + Owner drawings <strong style="color:#0f172a">${fmt$(wage)}</strong> + Optional retirement reserve <strong style="color:#0f172a">${fmt$(retirementAmt)}</strong> = <strong style="color:#ef4444">${fmt$(totalFixed)}</strong>
       </div>
     </div>
   </div>`;
@@ -14989,6 +15197,16 @@ function renderSettings(){
       </div>
     </div>
 
+    <!-- SOLE-TRADER PLANNING SETTINGS -->
+    <div style="background:#eef2ff;border:1px solid #c7d2fe;border-radius:12px;margin-bottom:20px;padding:20px">
+      <div style="font-size:15px;font-weight:800;color:#1e1b4b;margin-bottom:4px">Sole-Trader Planning</div>
+      <div style="font-size:11px;color:#4338ca;margin-bottom:14px">These are management reserves, not payroll or lodged tax calculations.</div>
+      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px">
+        <div><label style="display:block;font-size:11px;font-weight:800;color:#3730a3;text-transform:uppercase;margin-bottom:5px">Tax reserve %</label><input id="cfg-taxReserveRate" type="number" step="0.5" value="${((CFG.taxReserveRate||0.30)*100).toFixed(1)}" style="${inputStyle}"><div style="font-size:10px;color:#6366f1;margin-top:3px">Applied to estimated profit</div></div>
+        <div><label style="display:block;font-size:11px;font-weight:800;color:#3730a3;text-transform:uppercase;margin-bottom:5px">Retirement reserve %</label><input id="cfg-retirementReserveRate" type="number" step="0.5" value="${((CFG.retirementReserveRate||0.115)*100).toFixed(1)}" style="${inputStyle}"><div style="font-size:10px;color:#6366f1;margin-top:3px">Optional sole-trader reserve</div></div>
+        <div><label style="display:block;font-size:11px;font-weight:800;color:#3730a3;text-transform:uppercase;margin-bottom:5px">Monthly owner drawings</label><input id="cfg-ownerDrawMonthly" type="number" step="100" value="${CFG.ownerDrawMonthly||6000}" style="${inputStyle}"><div style="font-size:10px;color:#6366f1;margin-top:3px">Target only; safe draw may be lower</div></div>
+      </div>
+    </div>
     <!-- DOCUMENTS & TEMPLATES -->
     <div style="background:#fff;border-radius:12px;border:1px solid #e2e8f0;margin-bottom:20px;overflow:hidden">
       <div style="padding:14px 20px;border-bottom:1px solid #f1f5f9;display:flex;align-items:center;justify-content:space-between">
@@ -15103,6 +15321,11 @@ function renderSettings(){
           <label style="display:block;font-size:10px;font-weight:700;color:#64748b;text-transform:uppercase;margin-bottom:4px">Payment Link Base URL</label>
           <input id="cfg-stripePaymentLinkBase" type="url" value="${CFG.stripePaymentLinkBase||''}" placeholder="https://buy.stripe.com/your-link" style="width:100%;padding:8px 10px;border:1px solid #cbd5e1;border-radius:7px;font-size:12px;color:#0f172a;background:#fff;box-sizing:border-box">
           <div style="font-size:11px;color:#94a3b8;margin-top:6px">Stripe Dashboard &rarr; Payment Links &rarr; Create link &rarr; copy URL</div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:12px">
+            <div><label style="display:block;font-size:10px;font-weight:700;color:#64748b;text-transform:uppercase;margin-bottom:4px">Domestic card rate</label><input id="cfg-stripeCardFeeRate" type="number" min="0" max="0.2" step="0.0001" value="${Number(CFG.stripeCardFeeRate!=null?CFG.stripeCardFeeRate:0.017)}" style="width:100%;padding:8px 10px;border:1px solid #cbd5e1;border-radius:7px;font-size:12px;box-sizing:border-box"><div style="font-size:10px;color:#94a3b8;margin-top:3px">Enter 0.017 for 1.70%</div></div>
+            <div><label style="display:block;font-size:10px;font-weight:700;color:#64748b;text-transform:uppercase;margin-bottom:4px">Fixed fee (A$)</label><input id="cfg-stripeCardFeeFixed" type="number" min="0" step="0.01" value="${Number(CFG.stripeCardFeeFixed!=null?CFG.stripeCardFeeFixed:0.30).toFixed(2)}" style="width:100%;padding:8px 10px;border:1px solid #cbd5e1;border-radius:7px;font-size:12px;box-sizing:border-box"></div>
+          </div>
+          <div style="font-size:11px;color:#92400e;background:#fff7ed;border:1px solid #fed7aa;border-radius:7px;padding:8px 10px;margin-top:10px">Card totals are grossed up to cover the configured Stripe processing cost. Review your Stripe statement and Australian card-surcharge rules before relying on this amount.</div>
         </div>
 
         <!-- Google Review -->
@@ -15268,6 +15491,10 @@ function settingsSave(){
   // Save integration keys
   const intKeys = ['hubspotToken','stripePaymentLinkBase','googleReviewUrl','twilioSid','twilioToken','twilioFrom','xeroEmail','websiteLeadsUrl','websiteLeadsToken'];
   intKeys.forEach(k => { const v = g('cfg-'+k); if(v !== null) CFG[k] = v; });
+  const stripeRate = gn('cfg-stripeCardFeeRate');
+  const stripeFixed = gn('cfg-stripeCardFeeFixed');
+  if(stripeRate !== null && stripeRate >= 0) CFG.stripeCardFeeRate = stripeRate;
+  if(stripeFixed !== null && stripeFixed >= 0) CFG.stripeCardFeeFixed = stripeFixed;
 
   // Business identity
   CFG.bizName = g('cfg-bizName') || CFG.bizName;
@@ -15314,6 +15541,9 @@ function settingsSave(){
   CFG.incomeMin = gn('cfg-incomeMin') || CFG.incomeMin;
   CFG.incomeComfort = gn('cfg-incomeComfort') || CFG.incomeComfort;
   CFG.incomeStretch = gn('cfg-incomeStretch') || CFG.incomeStretch;
+  if(gn('cfg-taxReserveRate')!=null) CFG.taxReserveRate = gn('cfg-taxReserveRate')/100;
+  if(gn('cfg-retirementReserveRate')!=null) CFG.retirementReserveRate = gn('cfg-retirementReserveRate')/100;
+  if(gn('cfg-ownerDrawMonthly')!=null) CFG.ownerDrawMonthly = gn('cfg-ownerDrawMonthly');
 
   // Payroll
   if(gn('cfg-payGross')!=null)  CFG.payGross  = gn('cfg-payGross');
@@ -15945,7 +16175,9 @@ function printQuoteDoc(jobId){
   d.close();
 }
 function printInvoiceDoc(jobId){
-  generateInvoicePDF(jobId);
+  // Canonical path: every final-invoice button opens the same editor before PDF generation.
+  // This prevents direct-render buttons from using stale lines, GST, or payment totals.
+  openInvoiceLineEditor(jobId);
   return;
   var invNum=j.invoiceNumber||j.jobNumber;
   var invAmt=Number(j.invoiceAmount)||Number(j.quoteAmount)||0;
@@ -16020,7 +16252,8 @@ function printInvoiceDoc(jobId){
 
 // ─── DEPOSIT INVOICE PDF ───────────────────────────────────────────────────────
 function printDepositInvoiceDoc(jobId){
-  generateInvoicePDF(jobId, 'deposit');
+  // Canonical deposit path: edit/confirm first, then generate the shared PDF renderer.
+  openDepositInvoiceEditor(jobId);
 }
 
 // ─── VEHICLE KM LOG ───────────────────────────────────────────────────────────
@@ -18988,10 +19221,15 @@ function generateQuotePDF(jobId){
 // Invoice line items are GST-EXCLUSIVE; GST is added on top for the GST-INCLUSIVE
 // total on standalone line-item invoices. Deposit-split invoices keep their amounts.
 function invLineTotalInc(job, lineTotal){
-  if(CFG.gstRegistered === false) return lineTotal;
-  if(!job.invoiceLines || (job.invoiceLines.length || 0) < 1) return lineTotal;
-  if(Number(job.depositAmount) > 0) return lineTotal;
-  return lineTotal * (1 + (Number(CFG.gst)||0.1));
+  const total=Number(lineTotal)||0;
+  if(CFG.gstRegistered === false) return total;
+  if(!job.invoiceLines || (job.invoiceLines.length || 0) < 1) return total;
+  if(Number(job.depositAmount) > 0) return total;
+  // Existing records may store line items already GST-inclusive. If their sum
+  // matches the recorded invoice/quote amount, do not add GST a second time.
+  const recorded=Number(job.invoiceAmount||job.quoteAmount||0);
+  if(recorded>0 && Math.abs(total-recorded)<=0.02) return total;
+  return total * (1 + (Number(CFG.gst)||0.1));
 }
 
 function openInvoiceLineEditor(jobId){
@@ -19047,7 +19285,7 @@ function openInvoiceLineEditor(jobId){
 
   function buildHTML(){
     const lineTotal = getLineTotal();
-    const lineTotalInc = invLineTotalInc(lineTotal);
+    const lineTotalInc = invLineTotalInc(j, lineTotal);
     const invAmt = Number(j.invoiceAmount||j.quoteAmount||0);
     const diff = Math.abs(lineTotalInc - invAmt);
     const diffWarn = diff > 0.01 ? `<div style="background:#fff8f4;border:1.5px solid #f07020;border-radius:8px;padding:10px 14px;font-size:12px;color:#c2400a;margin-bottom:12px">
@@ -19151,6 +19389,7 @@ function openInvoiceLineEditor(jobId){
             <span style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:rgba(255,255,255,0.7)">Invoice Total</span>
             <span style="color:#f07020">$<span id="il-total">${invLineTotalInc(j, lineTotal).toFixed(2)}</span></span>
           </div>
+          <div id="il-card-total">${CFG.stripePaymentLinkBase ? stripeCardSummaryHtml(lineTotalInc, true) : ''}</div>
         </div>
 
         <!-- SECTION 5: Payment Details (from Settings) -->
@@ -19259,8 +19498,11 @@ function openInvoiceLineEditor(jobId){
         const cells = rowEl.querySelectorAll('td');
         if(cells[3]) cells[3].textContent = '$'+(ln.qty*ln.unit).toFixed(2);
       }
+      const currentTotal = invLineTotalInc(j, j.invoiceLines.reduce((s,l)=>s+(l.qty*l.unit),0));
       const totalEl = document.getElementById('il-total');
-      if(totalEl) totalEl.textContent = invLineTotalInc(j, j.invoiceLines.reduce((s,l)=>s+(l.qty*l.unit),0)).toFixed(2);
+      if(totalEl) totalEl.textContent = currentTotal.toFixed(2);
+      const cardEl = document.getElementById('il-card-total');
+      if(cardEl) cardEl.innerHTML = CFG.stripePaymentLinkBase ? stripeCardSummaryHtml(currentTotal, true) : '';
     }
     save();
   };
@@ -19343,10 +19585,11 @@ function generateInvoicePDF(jobId, mode){
   const lineTotal = lines.reduce((s,l)=>s+(l.qty*l.unit),0);
   const _gst = Number(CFG.gst)||0.1;
   const _gstApplied = CFG.gstRegistered !== false;
-  // Standalone line-item invoices are GST-EXCLUSIVE, so GST is ADDED on top for the
-  // GST-INCLUSIVE Total Due. Deposit-split and single agreed-price invoices already
-  // carry GST-INCLUSIVE totals and are NOT inflated again.
-  const _usingLines = !isDeposit && (j.invoiceLines && (j.invoiceLines.length || 0) >= 1) && !(Number(j.depositAmount) > 0);
+  // Add GST only when line items are clearly ex-GST. Existing line items whose
+  // sum matches the recorded invoice amount are already GST-inclusive and are
+  // displayed without a second GST addition.
+  const _linesMatchRecordedTotal = !isDeposit && Number(invAmt)>0 && Math.abs(lineTotal-Number(invAmt))<=0.02;
+  const _usingLines = !isDeposit && (j.invoiceLines && (j.invoiceLines.length || 0) >= 1) && !(Number(j.depositAmount) > 0) && !_linesMatchRecordedTotal;
   let _subEx, _gstAmt, _totalInc;
   if (_usingLines) {
     _subEx = lineTotal;
@@ -19479,17 +19722,7 @@ function generateInvoicePDF(jobId, mode){
           <span style="font-family:Barlow Condensed,sans-serif;font-size:16px;font-weight:800;color:#fff;text-transform:uppercase;letter-spacing:1px">Total Due</span>
           <span style="font-family:Barlow Condensed,sans-serif;font-size:22px;font-weight:900;color:#f07020">$${_totalInc.toFixed(2)}</span>
         </div>
-        ${stripePayUrl(jobId, isDeposit?invNum:undefined) ? (()=>{
-          const _stripeFee = Math.round(_totalInc * 0.017 * 100) / 100;
-          const _stripeTotal = Math.round((_totalInc + _stripeFee) * 100) / 100;
-          return `<div style="margin-top:10px;padding:14px 16px;background:linear-gradient(135deg,#5b21b6,#7c3aed);border:1px solid #4c1d95;border-radius:8px;color:#fff;box-shadow:0 4px 12px rgba(91,33,182,0.22)">
-            <div style="font-family:Barlow Condensed,sans-serif;font-size:14px;font-weight:800;text-transform:uppercase;letter-spacing:1px;margin-bottom:7px">Total if paying by card with Stripe</div>
-            <div style="display:flex;justify-content:space-between;align-items:baseline;gap:12px">
-              <span style="font-size:11px;color:#ede9fe">${fmt$(_totalInc)} invoice total + 1.7% card fee (${fmt$(_stripeFee)})</span>
-              <span style="font-family:Barlow Condensed,sans-serif;font-size:24px;font-weight:900;white-space:nowrap">${fmt$(_stripeTotal)}</span>
-            </div>
-          </div>`;
-        })() : ''}
+        ${stripePayUrl(jobId, isDeposit?invNum:undefined) ? stripeCardSummaryHtml(_totalInc) : ''}
       </div>
     </div>
   </div>
@@ -20044,6 +20277,32 @@ function sendWhatsApp(jobId, type='confirm'){
     window.open(`https://wa.me/?text=${text}`, '_blank');
     showToast('No phone number — WhatsApp opened with message only','warn');
   }
+}
+
+// ─── STRIPE CARD TOTAL ────────────────────────────────────────────────────────
+// Gross-up so the card payment covers Stripe's percentage and fixed fee.
+// Defaults reflect Stripe Australia online domestic-card pricing: 1.70% + A$0.30.
+function stripeCardSurchargeActive(){
+  return CFG.stripeCardSurchargeEnabled !== false && today() < (CFG.stripeCardSurchargeEnd || '2026-10-01');
+}
+function stripeCardTotal(baseAmount){
+  const base=Math.max(0,Number(baseAmount)||0);
+  const rate=Math.max(0,Number(CFG.stripeCardFeeRate!=null?CFG.stripeCardFeeRate:0.017));
+  const fixed=Math.max(0,Number(CFG.stripeCardFeeFixed!=null?CFG.stripeCardFeeFixed:0.30));
+  if(!stripeCardSurchargeActive()) return {base,fee:0,total:base,rate,fixed,active:false};
+  const total=Math.round(((base+fixed)/(1-rate))*100)/100;
+  return {base,fee:Math.round((total-base)*100)/100,total,rate,fixed,active:true};
+}
+function stripeCardSummaryHtml(baseAmount, compact=false){
+  const x=stripeCardTotal(baseAmount);
+  if(!x.active) return '';
+  return `<div style="margin-top:10px;padding:${compact?'11px 13px':'14px 16px'};background:linear-gradient(135deg,#5b21b6,#7c3aed);border:1px solid #4c1d95;border-radius:8px;color:#fff;box-shadow:0 4px 12px rgba(91,33,182,0.22)">
+    <div style="font-family:Barlow Condensed,sans-serif;font-size:${compact?'12px':'14px'};font-weight:800;text-transform:uppercase;letter-spacing:1px;margin-bottom:7px">Total if paying by card with Stripe</div>
+    <div style="display:flex;justify-content:space-between;align-items:baseline;gap:12px">
+      <span style="font-size:11px;color:#ede9fe">${fmt$(x.base)} invoice total + card processing fee (${fmt$(x.fee)})</span>
+      <span style="font-family:Barlow Condensed,sans-serif;font-size:${compact?'21px':'24px'};font-weight:900;white-space:nowrap">${fmt$(x.total)}</span>
+    </div>
+  </div>`;
 }
 
 // ─── STRIPE PAYMENT LINK ──────────────────────────────────────────────────────
@@ -21454,6 +21713,32 @@ function startAutoIntervals(){
     if(_backupDirHandle) writeBackupFile();
   }, AUTO_BACKUP_MS);
 }
+
+
+let _syncRetryTimer = null;
+function scheduleVerifiedSyncRetry(){
+  if(!navigator.onLine) return;
+  clearTimeout(_syncRetryTimer);
+  _syncRetryTimer=setTimeout(async()=>{
+    try{
+      updateSyncStatus('syncing');
+      await _pushToSupabase();
+      showToast('☁ Connection restored — cloud sync verified','success');
+    }catch(e){
+      updateSyncStatus('error');
+      console.warn('Reconnect sync deferred:',e.message);
+    }
+  },1200);
+}
+window.addEventListener('offline',()=>updateSyncStatus('offline'));
+window.addEventListener('online',()=>scheduleVerifiedSyncRetry());
+document.addEventListener('visibilitychange',()=>{
+  if(document.visibilityState==='visible' && navigator.onLine){
+    getSyncHealth().then(h=>{
+      if((h.mismatches||[]).length) showToast('⚠ Cloud changed elsewhere — pull and review before editing','warn');
+    }).catch(()=>{});
+  }
+});
 
 function updateAutoSaveStatus(){
   const el = document.getElementById('auto-save-status');
