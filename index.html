@@ -19269,6 +19269,8 @@ function generateQuotePDF(jobId){
 function invLineTotalInc(job, lineTotal){
   const total=Number(lineTotal)||0;
   if(CFG.gstRegistered === false) return total;
+  // Some invoices are entered as final GST-inclusive amounts. Do not add GST again.
+  if(job.invoiceAmountIncludesGST === true) return total;
   if(!job.invoiceLines || (job.invoiceLines.length || 0) < 1) return total;
   if(Number(job.depositAmount) > 0) return total;
   // Existing records may store line items already GST-inclusive. If their sum
@@ -22993,6 +22995,21 @@ window.addEventListener('beforeunload', (e) => {
       console.log('[Data] Supplier invoice migration v1: '+corrected+' corrections applied');
     }
     STORE.set('sinv_migration_v2', '1');
+  })();
+
+  // One-time correction: SAI_100106 was confirmed as a final GST-inclusive $715.00 invoice.
+  // Mark it explicitly so the display and PDF do not add GST a second time.
+  (function(){
+    if(STORE.get('sai_100106_gst_inclusive_v1')) return;
+    var target = jobs.find(function(j){ return j.jobNumber === 'SAI_100106'; });
+    if(target){
+      target.invoiceAmount = '715.00';
+      target.quoteAmount = '715.00';
+      target.invoiceAmountIncludesGST = true;
+      save();
+      console.log('[Data] SAI_100106 corrected to final GST-inclusive $715.00');
+    }
+    STORE.set('sai_100106_gst_inclusive_v1', '1');
   })();
   // 2. Restore backup folder handle
   await initBackupDir();
