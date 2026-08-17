@@ -2705,6 +2705,7 @@ function jobRevenue(j) {
 function jobAmountDisplay(j) {
   const stored = Number(j.invoiceAmount || j.quoteAmount || 0);
   if (j.invoiceAmountIncludesGST === true) return stored;
+  if (j.gstExempt === true) return stored;
   const hasLines = j.invoiceLines && j.invoiceLines.length >= 1;
   const splitDeposit = Number(j.depositAmount) > 0;
   if (CFG.gstRegistered !== false && hasLines && !splitDeposit) {
