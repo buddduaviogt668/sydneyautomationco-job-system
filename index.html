@@ -2809,6 +2809,12 @@ function normalizeConfirmedFinalTotals(){
     const lineTotal = (j.invoiceLines||[]).reduce(function(s,l){ return s + (Number(l.qty)||0) * (Number(l.unit)||0); }, 0);
     const recorded = Number(j.invoiceAmount||0);
     // Correct invoices that were previously increased by exactly 10% GST.
+    // ONLY for businesses not registered for GST (or pre-GST-tagged jobs). For a
+    // GST-registered business, invoiceAmount == lineTotal*1.1 is the CORRECT
+    // GST-inclusive figure — downgrading it to lineTotal would show the amount too
+    // low and keep undoing the inclusive value saved by the line editor.
+    const subjectToGst = (typeof CFG !== 'undefined') ? CFG.gstRegistered !== false : true;
+    if(subjectToGst && !j.gstExempt) return;
     if(lineTotal > 0 && recorded > 0 && Math.abs(recorded - lineTotal * 1.1) <= 0.02){
       j.invoiceAmount = lineTotal.toFixed(2);
       j.invoiceAmountIncludesGST = true;
