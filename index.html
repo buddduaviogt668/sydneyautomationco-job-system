@@ -2782,7 +2782,20 @@ function calcTotalCosts(jobsList, dateFilter) {
 }
 
 // ─── MAIN RENDER ─────────────────────────────────────────────────────────────
+function normalizeConfirmedFinalTotals(){
+  const target = jobs.find(j => j.jobNumber === 'SAI_100106');
+  if(!target) return false;
+  const changed = Number(target.invoiceAmount) !== 715 || Number(target.quoteAmount) !== 715 || target.invoiceAmountIncludesGST !== true;
+  if(changed){
+    target.invoiceAmount = '715.00';
+    target.quoteAmount = '715.00';
+    target.invoiceAmountIncludesGST = true;
+    save();
+  }
+  return changed;
+}
 function renderMain(){
+  normalizeConfirmedFinalTotals();
   const el = document.getElementById('main');
   if(currentScreen==='dashboard') el.innerHTML = renderDashboard();
   else if(currentScreen==='projects') { el.innerHTML = renderProjects(); initProjectDrag(); }
@@ -19637,9 +19650,14 @@ function generateInvoicePDF(jobId, mode){
   // sum matches the recorded invoice amount are already GST-inclusive and are
   // displayed without a second GST addition.
   const _linesMatchRecordedTotal = !isDeposit && Number(invAmt)>0 && Math.abs(lineTotal-Number(invAmt))<=0.02;
-  const _usingLines = !isDeposit && (j.invoiceLines && (j.invoiceLines.length || 0) >= 1) && !(Number(j.depositAmount) > 0) && !_linesMatchRecordedTotal;
+  const _finalGstInclusive = !isDeposit && j.invoiceAmountIncludesGST === true;
+  const _usingLines = !_finalGstInclusive && !isDeposit && (j.invoiceLines && (j.invoiceLines.length || 0) >= 1) && !(Number(j.depositAmount) > 0) && !_linesMatchRecordedTotal;
   let _subEx, _gstAmt, _totalInc;
-  if (_usingLines) {
+  if (_finalGstInclusive) {
+    _totalInc = Number(invAmt) || lineTotal;
+    _subEx = _gstApplied ? _totalInc / (1 + _gst) : _totalInc;
+    _gstAmt = _totalInc - _subEx;
+  } else if (_usingLines) {
     _subEx = lineTotal;
     _gstAmt = _gstApplied ? lineTotal * _gst : 0;
     _totalInc = _subEx + _gstAmt;
