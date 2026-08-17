@@ -8676,7 +8676,7 @@ function openVisualQuote(jobId) {
       const qty = Number(l.qty) || 1;
       const unit = Number(l.unit) || 0;
       const amt = qty * unit;
-      initItems.push({ num: (idx++) + '.', desc: l.desc || '', partNumber: l.partNumber || '', qty: String(qty), unit: unit > 0 ? unit.toFixed(2) : '', amount: amt > 0 ? amt.toFixed(2) : '' });
+      initItems.push({ num: (idx++) + '.', desc: l.desc || '', partNumber: l.partNumber || '', qty: String(qty), unit: unit !== 0 ? unit.toFixed(2) : '', amount: amt !== 0 ? amt.toFixed(2) : '' });
     });
   } else if (_QS && _QS.jobId === jobId && _QS.lines && _QS.lines.length > 0) {
     let idx = 1;
@@ -8684,7 +8684,7 @@ function openVisualQuote(jobId) {
       const qty = Number(l.qty) || 1;
       const unit = Number(l.unit) || 0;
       const amt = qty * unit;
-      initItems.push({ num: (idx++) + '.', desc: l.desc || '', partNumber: l.partNumber || '', qty: String(qty), unit: unit > 0 ? unit.toFixed(2) : '', amount: amt > 0 ? amt.toFixed(2) : '' });
+      initItems.push({ num: (idx++) + '.', desc: l.desc || '', partNumber: l.partNumber || '', qty: String(qty), unit: unit !== 0 ? unit.toFixed(2) : '', amount: amt !== 0 ? amt.toFixed(2) : '' });
     });
   } else if (QB.items && QB.items.length > 0) {
     let idx = 1;
@@ -8694,13 +8694,13 @@ function openVisualQuote(jobId) {
       const qty = Number(item.qty) || 1;
       const amt = qty * unit;
       const desc = (p.partNumber ? p.partNumber + ' – ' : '') + (p.description || '');
-      initItems.push({ num: (idx++) + '.', desc, partNumber: p.partNumber || '', qty: String(qty), unit: unit > 0 ? unit.toFixed(2) : '', amount: amt > 0 ? amt.toFixed(2) : '' });
+      initItems.push({ num: (idx++) + '.', desc, partNumber: p.partNumber || '', qty: String(qty), unit: unit !== 0 ? unit.toFixed(2) : '', amount: amt !== 0 ? amt.toFixed(2) : '' });
     });
     QB.labour.forEach(l => {
       const qty = Number(l.hours) || 1;
       const unit = Number(l.rate) || 0;
       const amt = qty * unit;
-      initItems.push({ num: (idx++) + '.', desc: l.desc || 'Labour', partNumber: '', qty: String(qty), unit: unit > 0 ? unit.toFixed(2) : '', amount: amt > 0 ? amt.toFixed(2) : '' });
+      initItems.push({ num: (idx++) + '.', desc: l.desc || 'Labour', partNumber: '', qty: String(qty), unit: unit !== 0 ? unit.toFixed(2) : '', amount: amt !== 0 ? amt.toFixed(2) : '' });
     });
     if (QB.callout > 0) {
       initItems.push({ num: (idx++) + '.', desc: 'Callout / Site Visit', partNumber: '', qty: '1', unit: QB.callout.toFixed(2), amount: QB.callout.toFixed(2) });
@@ -8932,6 +8932,7 @@ function openVisualQuote(jobId) {
   <div id="vq-toolbar">
     <span id="vq-tlabel">SAC · Visual Quote — ${j.jobNumber}</span>
     <button class="vq-btn vq-btn-new" onclick="vqAddRow()">＋ Add Row</button>
+    <button class="vq-btn vq-btn-new" onclick="vqAddGoodwillCredit()">＋ Goodwill Credit</button>
     <button class="vq-btn vq-btn-save" onclick="vqSaveToJob('${jobId}')">💾 Save to Job</button>
     <button class="vq-btn vq-btn-print" onclick="vqPrintPdf()">🖨 Print / PDF</button>
     <button class="vq-btn vq-btn-close" onclick="document.getElementById('vq-overlay').remove()">✕ Close</button>
@@ -9135,7 +9136,7 @@ function openVisualQuote(jobId) {
     });
     const ctrl = document.createElement('tr');
     ctrl.className = 'vq-add-row';
-    ctrl.innerHTML = `<td colspan="5"><button class="vq-btn-sm" onclick="vqAddRow()">+ Add Row</button><button class="vq-btn-sm" onclick="vqRemoveLastRow()">− Remove Last</button></td>`;
+    ctrl.innerHTML = `<td colspan="5"><button class="vq-btn-sm" onclick="vqAddRow()">+ Add Row</button><button class="vq-btn-sm" onclick="vqAddGoodwillCredit()">+ Goodwill Credit</button><button class="vq-btn-sm" onclick="vqRemoveLastRow()">− Remove Last</button></td>`;
     tbody.appendChild(ctrl);
   };
 
@@ -9155,18 +9156,20 @@ function openVisualQuote(jobId) {
 
   window.vqCalcTotals = function() {
     var rows = document.querySelectorAll('.vq-irow');
+    var signedNumber = function(v) { return parseFloat(String(v == null ? '' : v).replace(/[^0-9.-]/g,'')) || 0; };
     var subtotal = 0;
     rows.forEach(function(tr) {
       var qtyEl = tr.querySelector('.vq-td-qty');
       var unitEl = tr.querySelector('.vq-td-unit');
       var amtEl = tr.querySelector('.vq-td-amt');
-      var qty = parseFloat(String(qtyEl ? qtyEl.value : '').replace(/[^0-9.]/g,'')) || 0;
-      var unit = parseFloat(String(unitEl ? unitEl.value : '').replace(/[^0-9.]/g,'')) || 0;
-      var amtRaw = parseFloat(String(amtEl ? amtEl.value : '').replace(/[^0-9.]/g,'')) || 0;
+      var qty = signedNumber(qtyEl ? qtyEl.value : '');
+      var unit = signedNumber(unitEl ? unitEl.value : '');
+      var amtText = String(amtEl ? amtEl.value : '').trim();
+      var amtRaw = signedNumber(amtText);
       var rowAmt = 0;
-      if (amtRaw > 0) {
+      if (amtText !== '' && amtRaw !== 0) {
         rowAmt = amtRaw;
-      } else if (qty > 0 && unit > 0) {
+      } else if (qty !== 0 && unit !== 0) {
         rowAmt = qty * unit;
         if (amtEl && isFinite(rowAmt)) amtEl.value = rowAmt.toFixed(2);
       }
@@ -9181,7 +9184,7 @@ function openVisualQuote(jobId) {
     var gstPct = gstOn ? Math.round((Number(CFG.gst) || 0.1) * 100) : 0;
     var gst = gstOn ? subtotal * (gstPct / 100) : 0;
     var total = subtotal + gst;
-    var fmt$ = function(v) { return '$' + Number(v).toLocaleString('en-AU', {minimumFractionDigits:2,maximumFractionDigits:2}); };
+    var fmt$ = function(v) { return v < 0 ? '-$' + Math.abs(Number(v)).toLocaleString('en-AU', {minimumFractionDigits:2,maximumFractionDigits:2}) : '$' + Number(v).toLocaleString('en-AU', {minimumFractionDigits:2,maximumFractionDigits:2}); };
     if (subEl) subEl.textContent = fmt$(subtotal);
     if (gstEl) gstEl.textContent = fmt$(gst);
     if (gstLabel) gstLabel.textContent = 'GST (' + gstPct + '%)';
@@ -9198,6 +9201,20 @@ function openVisualQuote(jobId) {
   window.vqAddRow = function() {
     const it = vqGetItems(); it.push({ num: (it.length + 1) + '.', desc: '', qty: '', unit: '', amount: '', partNumber: '' });
     vqRenderItems(it);
+  };
+
+  window.vqAddGoodwillCredit = function() {
+    const it = vqGetItems();
+    if (it.some(x => /goodwill credit/i.test(x.desc || ''))) { alert('Goodwill credit already added.'); return; }
+    const callout = it.find(x => /callout|site visit/i.test(x.desc || ''));
+    let amount = callout ? Math.abs(parseFloat(String(callout.amount || callout.qty * callout.unit || '').replace(/[^0-9.-]/g,'')) || 0) : 0;
+    if (!amount) {
+      amount = parseFloat(prompt('Enter the call-out fee to credit:', String(CFG.callout || 195)) || '0') || 0;
+    }
+    if (!amount) { alert('Add a call-out line or enter a credit amount first.'); return; }
+    it.push({ num: (it.length + 1) + '.', desc: 'Goodwill Credit — Callout Fee', qty: '1', unit: (-amount).toFixed(2), amount: (-amount).toFixed(2), partNumber: '' });
+    vqRenderItems(it);
+    vqCalcTotals();
   };
 
   window.vqRemoveLastRow = function() {
@@ -9220,10 +9237,10 @@ function openVisualQuote(jobId) {
     var gstOn = CFG.gstRegistered !== false;
     var gstPct = Math.round((Number(CFG.gst) || 0.1) * 100);
     var subtotal = 0;
-    items.forEach(function(it) { subtotal += parseFloat(String(it.amount).replace(/[^0-9.]/g,'')) || 0; });
+    items.forEach(function(it) { subtotal += parseFloat(String(it.amount).replace(/[^0-9.-]/g,'')) || 0; });
     var gst = gstOn ? subtotal * (gstPct / 100) : 0;
     var total = subtotal + gst;
-    var fmt = function(v) { return '$' + v.toLocaleString('en-AU', {minimumFractionDigits:2,maximumFractionDigits:2}); };
+    var fmt = function(v) { return v < 0 ? '-$' + Math.abs(v).toLocaleString('en-AU', {minimumFractionDigits:2,maximumFractionDigits:2}) : '$' + v.toLocaleString('en-AU', {minimumFractionDigits:2,maximumFractionDigits:2}); };
     var esc = function(s) { return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); };
     var g = function(id) { var e = document.getElementById(id); return e ? (e.value || e.textContent || '') : ''; };
     var w = window.open('', '_blank', 'width=900,height=750');
@@ -9293,9 +9310,9 @@ function openVisualQuote(jobId) {
 
     html += '<table><thead><tr><th>#</th><th>Description</th><th>Qty</th><th>Unit ($)</th><th>Amount ($)</th></tr></thead><tbody>';
     items.forEach(function(it) {
-      var ra = parseFloat(String(it.amount).replace(/[^0-9.]/g,'')) || 0;
-      var uu = parseFloat(String(it.unit).replace(/[^0-9.]/g,'')) || 0;
-      html += '<tr><td>' + esc(it.num) + '</td><td>' + esc(it.desc) + '</td><td style="text-align:center">' + esc(it.qty) + '</td><td>' + (uu > 0 ? fmt(uu) : '') + '</td><td>' + (ra > 0 ? fmt(ra) : '') + '</td></tr>';
+      var ra = parseFloat(String(it.amount).replace(/[^0-9.-]/g,'')) || 0;
+      var uu = parseFloat(String(it.unit).replace(/[^0-9.-]/g,'')) || 0;
+      html += '<tr><td>' + esc(it.num) + '</td><td>' + esc(it.desc) + '</td><td style="text-align:center">' + esc(it.qty) + '</td><td>' + (uu !== 0 ? fmt(uu) : '') + '</td><td>' + (ra !== 0 ? fmt(ra) : '') + '</td></tr>';
     });
     html += '</tbody></table>';
 
@@ -9399,7 +9416,7 @@ function openVisualQuote(jobId) {
     const data = vqCollect();
     jj.quoteData = data;
     // Sync the total back to quoteAmount
-    const total = data.grandTotal.replace(/[^0-9.]/g, '');
+    const total = data.grandTotal.replace(/[^0-9.-]/g, '');
     if (total) jj.quoteAmount = total;
     save();
     // Flash save confirmation
