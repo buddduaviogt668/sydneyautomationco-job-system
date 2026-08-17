@@ -2678,19 +2678,10 @@ function jobRevenue(j) {
   return collected > 0 ? collected : Math.max(0, Number(j.quoteAmount) || 0);
 }
 
-// ─── JOB AMOUNT HELPER (GST handling) ────────────────────────────────────────
-// Line items are entered GST-EXCLUSIVE. For a standalone line-item invoice (no
-// deposit split), GST is added on top for the GST-INCLUSIVE amount. Deposit-split
-// jobs (deposit + balance invoice) carry already-inclusive amounts and are unchanged.
+// ─── JOB AMOUNT HELPER (Jobs-section display only) ────────────────────────────
+// The invoice amount is already the final amount shown on the invoice/PDF.
+// The Jobs list must display that stored amount directly and must not recalculate GST.
 function jobAmountDisplay(j) {
-  const rate = Number(CFG.gst) || 0.1;
-  const gstOn = CFG.gstRegistered !== false;
-  const hasLines = j.invoiceLines && (j.invoiceLines.length || 0) >= 1;
-  const splitDeposit = Number(j.depositAmount) > 0;
-  if (gstOn && hasLines && !splitDeposit) {
-    const lt = j.invoiceLines.reduce((s, l) => s + ((Number(l.qty) || 0) * (Number(l.unit) || 0)), 0);
-    return lt * (1 + rate);
-  }
   return Number(j.invoiceAmount || j.quoteAmount || 0);
 }
 
