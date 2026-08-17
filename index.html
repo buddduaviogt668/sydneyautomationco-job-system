@@ -2683,11 +2683,14 @@ function jobRevenue(j) {
 // those records. Explicitly GST-inclusive records are displayed unchanged.
 function jobAmountDisplay(j) {
   const stored = Number(j.invoiceAmount || j.quoteAmount || 0);
-  if (j.jobsAmountMode === 'final') return stored;
-  if (Number(j.depositAmount) > 0) return stored;
-  if (CFG.gstRegistered === false) return stored;
-  const lineTotal = (j.invoiceLines||[]).reduce((s,l) => s + ((Number(l.qty)||0) * (Number(l.unit)||0)), 0);
-  return (lineTotal > 0 ? lineTotal : stored) * (1 + (Number(CFG.gst)||0.1));
+  if (j.invoiceAmountIncludesGST === true) return stored;
+  const hasLines = j.invoiceLines && j.invoiceLines.length >= 1;
+  const splitDeposit = Number(j.depositAmount) > 0;
+  if (CFG.gstRegistered !== false && hasLines && !splitDeposit) {
+    const lineTotal = j.invoiceLines.reduce((s,l) => s + ((Number(l.qty)||0) * (Number(l.unit)||0)), 0);
+    if (lineTotal > 0) return lineTotal * (1 + (Number(CFG.gst)||0.1));
+  }
+  return stored;
 }
 
 // ─── JOB OUTSTANDING HELPER ──────────────────────────────────────────────────
@@ -2778,29 +2781,30 @@ function calcTotalCosts(jobsList, dateFilter) {
 }
 
 // ─── MAIN RENDER ─────────────────────────────────────────────────────────────
-function normalizeInvoiceTotalModes(){
+function normalizeConfirmedFinalTotals(){
   let changed = false;
   jobs.forEach(function(j){
-    if(j.type !== 'SAI' || !(Number(j.invoiceAmount) > 0)) return;
-    if(!j.jobsAmountMode){
-      // Existing records keep the historic Jobs-list presentation. This marker
-      // prevents future code changes or reloads from guessing again.
-      j.jobsAmountMode = 'legacy_ex_gst';
+    const lineTotal = (j.invoiceLines||[]).reduce(function(s,l){ return s + (Number(l.qty)||0) * (Number(l.unit)||0); }, 0);
+    const recorded = Number(j.invoiceAmount||0);
+    // Correct invoices that were previously increased by exactly 10% GST.
+    if(lineTotal > 0 && recorded > 0 && Math.abs(recorded - lineTotal * 1.1) <= 0.02){
+      j.invoiceAmount = lineTotal.toFixed(2);
+      j.invoiceAmountIncludesGST = true;
       changed = true;
     }
   });
   const target = jobs.find(j => j.jobNumber === 'SAI_100106');
-  if(target){
-    if(Number(target.invoiceAmount) !== 715){ target.invoiceAmount = '715.00'; changed = true; }
-    if(Number(target.quoteAmount) !== 715){ target.quoteAmount = '715.00'; changed = true; }
-    if(target.jobsAmountMode !== 'final'){ target.jobsAmountMode = 'final'; changed = true; }
-    if(target.invoiceAmountIncludesGST !== true){ target.invoiceAmountIncludesGST = true; changed = true; }
+  if(target && (Number(target.invoiceAmount) !== 715 || Number(target.quoteAmount) !== 715 || target.invoiceAmountIncludesGST !== true)){
+    target.invoiceAmount = '715.00';
+    target.quoteAmount = '715.00';
+    target.invoiceAmountIncludesGST = true;
+    changed = true;
   }
   if(changed) save();
   return changed;
 }
 function renderMain(){
-  normalizeInvoiceTotalModes();
+  normalizeConfirmedFinalTotals();
   const el = document.getElementById('main');
   if(currentScreen==='dashboard') el.innerHTML = renderDashboard();
   else if(currentScreen==='projects') { el.innerHTML = renderProjects(); initProjectDrag(); }
@@ -4466,7 +4470,7 @@ function revertStatus(id){
   if(!confirm('↩ Revert "'+j.jobNumber+'" from '+curLabel+' back to '+prevLabel+'?\n\nAuto-set dates for the current status will be cleared.')) return;
   // Clear fields that were auto-set when entering this status
   if(cur==='paid')         { j.paidDate=''; }
-  if(cur==='invoiced')     { j.invoiceNumber=''; j.invoiceAmount=''; j.invoiceAmountIncludesGST=undefined; j.invoiceDue=''; }
+  if(cur==='invoiced')     { j.invoiceNumber=''; j.invoiceAmount=''; j.invoiceDue=''; }
   if(cur==='deposit_paid') { j.depositDate=''; j.depositAmount=''; }
   if(cur==='parts_ordered'){ j.partsOrderDate=''; }
   if(cur==='approved')     { j.poDate=''; }
@@ -4515,7 +4519,7 @@ function _applyStatus(j, newStatus){
   if(newStatus==='paid' && !j.paidDate) j.paidDate=today();
   if(newStatus==='invoiced'){
     if(!j.invoiceNumber) j.invoiceNumber=j.jobNumber;
-    if(!j.invoiceAmount && j.quoteAmount) { j.invoiceAmount=j.quoteAmount; j.invoiceAmountIncludesGST=true; j.jobsAmountMode='final'; }
+    if(!j.invoiceAmount && j.quoteAmount) j.invoiceAmount=j.quoteAmount;
     if(!j.invoiceDue){
       const d=new Date(); d.setDate(d.getDate()+payTermsDays(CFG.invoicePaymentTerms||CFG.bizPaymentTerms,7));
       j.invoiceDue=d.toISOString().split('T')[0];
@@ -5455,8 +5459,6 @@ function saveJobEdit(id){
     jeInvAmt = (jeQuote - jeDep).toFixed(2);
   }
   j.invoiceAmount = jeInvAmt;
-  j.invoiceAmountIncludesGST = true;
-  j.jobsAmountMode = 'final';
   j.invoiceDue    = document.getElementById('je-invdue')?.value||'';
   j.paidDate      = document.getElementById('je-paid')?.value||'';
   j.supplierRef   = document.getElementById('je-supref')?.value.trim()||'';
@@ -6240,8 +6242,6 @@ function advanceJob(id, next){
     // Auto-fill invoice amount from quote amount if not already invoiced
     if(!j.invoiceAmount && j.quoteAmount){
       updates.invoiceAmount = (Number(j.quoteAmount) - (Number(j.depositAmount)||0)).toFixed(2);
-      updates.invoiceAmountIncludesGST = true;
-      updates.jobsAmountMode = 'final';
     }
     // Auto-set due date from payment terms
     if(!j.invoiceDue){
@@ -6254,7 +6254,7 @@ function advanceJob(id, next){
     const manualAmt = document.getElementById('inv-amt')?.value;
     const manualDue = document.getElementById('inv-due')?.value;
     if(manualNum) updates.invoiceNumber=manualNum;
-    if(manualAmt) { updates.invoiceAmount=manualAmt; updates.invoiceAmountIncludesGST=true; updates.jobsAmountMode='final'; }
+    if(manualAmt) updates.invoiceAmount=manualAmt;
     if(manualDue) updates.invoiceDue=manualDue;
     if(!_invoiceRefAvailable(updates.invoiceNumber,j.id)) return;
   }
@@ -6266,7 +6266,7 @@ function advanceJob(id, next){
     const manualNum = document.getElementById('inv-num')?.value.trim();
     const manualAmt = document.getElementById('inv-amt')?.value;
     if(manualNum) updates.invoiceNumber=manualNum;
-    if(manualAmt) { updates.invoiceAmount=manualAmt; updates.invoiceAmountIncludesGST=true; updates.jobsAmountMode='final'; }
+    if(manualAmt) updates.invoiceAmount=manualAmt;
     if(updates.invoiceNumber && !_invoiceRefAvailable(updates.invoiceNumber,j.id)) return;
   }
 
@@ -10365,8 +10365,6 @@ function convertQuoteToInvoice(jobId){
   j.jobNumber = j.invoiceNumber;
   const dep = Number(j.depositAmount) || 0;
   j.invoiceAmount = (Number(j.quoteAmount) - dep).toFixed(2);
-  j.invoiceAmountIncludesGST = true;
-  j.jobsAmountMode = 'final';
   j.status = 'invoiced';
   j.invoiceDate = today();
   const cfgDays = payTermsDays(CFG.invoicePaymentTerms||CFG.bizPaymentTerms, 7);
@@ -10472,7 +10470,7 @@ function _qiCreate(printAfter){
   const newJob = {
     id: 'j_qi_'+Date.now(), type:'SAI', jobNumber:invNum,
     invoiceNumber:invNum, clientId, scope:desc,
-    invoiceAmount:amount.toFixed(2), quoteAmount:amount.toFixed(2), invoiceAmountIncludesGST:true, jobsAmountMode:'final',
+    invoiceAmount:amount.toFixed(2), quoteAmount:amount.toFixed(2),
     status:'invoiced', createdAt:date, invoiceDate:date, invoiceDue:dueDate,
     scheduledDate:date, poNumber:po, notes:'Quick invoice',
     activityLog:[{ts:today()+' (quick)',msg:'Invoice created via Quick Invoice'}],
@@ -12270,7 +12268,7 @@ const AGENT_REGISTRY = [
         `📄 ${uninvoiced.length} job${uninvoiced.length>1?'s':''} need invoicing — ${fmt$(totalValue)}`,
         uninvoiced.slice(0,4).map(j=>{const c=gc(j.clientId)||{};return `${c.company||j.jobNumber} (${fmtD(j.scheduledDate)})`}).join(' · '),
         uninvoiced.slice(0,3).map(j=>({
-          label:`Invoice ${j.jobNumber}`, fn:`(function(){const j=jobs.find(x=>x.id==='${j.id}');if(j){j.status='invoiced';j.invoiceDate=today();j.invoiceAmount=j.quoteAmount;j.invoiceAmountIncludesGST=true;j.jobsAmountMode='final';j.invoiceNumber=j.jobNumber;save();openJobDetail('${j.id}');}})();`
+          label:`Invoice ${j.jobNumber}`, fn:`(function(){const j=jobs.find(x=>x.id==='${j.id}');if(j){j.status='invoiced';j.invoiceDate=today();j.invoiceAmount=j.quoteAmount;j.invoiceNumber=j.jobNumber;save();openJobDetail('${j.id}');}})();`
         }))
       );
     }
@@ -13755,8 +13753,6 @@ function addVariationToInvoice(jobId, idx){
   // Update invoice amount
   const oldAmt = Number(j.invoiceAmount||j.quoteAmount||0);
   j.invoiceAmount = (oldAmt + voTotal).toFixed(2);
-  j.invoiceAmountIncludesGST = true;
-  j.jobsAmountMode = 'final';
   j.quoteAmount   = j.invoiceAmount;
   v.status = 'invoiced';
   v.invoicedAt = today();
@@ -14367,7 +14363,7 @@ function pullLabourToInvoice(jobId){
 
   const total = j.quoteDoc.lines.reduce((s,l)=>s+(Number(l.qty)||0)*(Number(l.unit)||0),0);
   j.quoteAmount = total.toFixed(2);
-  if(j.status==='invoiced'||j.status==='overdue') { j.invoiceAmount = total.toFixed(2); j.invoiceAmountIncludesGST = true; j.jobsAmountMode='final'; }
+  if(j.status==='invoiced'||j.status==='overdue') j.invoiceAmount = total.toFixed(2);
   save();
   showToast(added+' labour line'+( added!==1?'s':'')+' added — new total: '+fmt$(total), 'success');
   renderMain();
@@ -14572,8 +14568,6 @@ function _applyInvoiceLines(jobId, linesJson){
     const total = j.quoteDoc.lines.reduce((s,l)=>s+(Number(l.qty)||0)*(Number(l.unit)||0),0);
     j.quoteAmount = total.toFixed(2);
     j.invoiceAmount = total.toFixed(2);
-    j.invoiceAmountIncludesGST = true;
-    j.jobsAmountMode = 'final';
     save();
     closeModal();
     showToast('✓ Lines applied — total: '+fmt$(total),'success');
@@ -18206,8 +18200,8 @@ const AI_ACTIONS = {
       const j = jobs.find(x => x.id===a.jobId_or_number || x.jobNumber===a.jobId_or_number);
       if (!j) throw new Error('Job not found: ' + a.jobId_or_number);
       const flds = ['status','scope','notes','invoiceAmount','paidDate','invoiceDue'];
-      flds.forEach(f => { if (a[f] !== undefined) { j[f] = String(a[f]); if(f==='invoiceAmount') { j.invoiceAmountIncludesGST=true; j.jobsAmountMode='final'; } } });
-      if (a.amount !== undefined) { j.quoteAmount = String(a.amount); if (!j.invoiceAmount) { j.invoiceAmount = String(a.amount); j.invoiceAmountIncludesGST = true; } }
+      flds.forEach(f => { if (a[f] !== undefined) j[f] = String(a[f]); });
+      if (a.amount !== undefined) { j.quoteAmount = String(a.amount); if (!j.invoiceAmount) j.invoiceAmount = String(a.amount); }
       if (a.status==='paid' && !j.paidDate) j.paidDate = today();
       save(); return { jobNumber:j.jobNumber, changes:a, message:'Updated '+j.jobNumber };
     }
@@ -19297,9 +19291,8 @@ function generateQuotePDF(jobId){
 function invLineTotalInc(job, lineTotal){
   const total=Number(lineTotal)||0;
   if(CFG.gstRegistered === false) return total;
-  // Explicit mode is the single source of truth. Legacy ex-GST records add GST;
-  // final GST-inclusive records display their entered total unchanged.
-  return job.invoiceAmountIncludesGST === false ? total * (1 + (Number(CFG.gst)||0.1)) : total;
+  // Standard invoices use entered line totals as the final GST-inclusive amount.
+  return total;
 }
 
 function openInvoiceLineEditor(jobId){
@@ -19612,9 +19605,8 @@ function openInvoiceLineEditor(jobId){
   window._ilSaveAndPrint = function(){
     syncHeaderFields();
     // Sync back to job fields
-  j.invoiceAmountIncludesGST = true;
-  j.jobsAmountMode = 'final';
-  j.invoiceNumber = j.invoiceHeaderFields.invoiceNumber;
+    j.invoiceAmountIncludesGST = true;
+    j.invoiceNumber = j.invoiceHeaderFields.invoiceNumber;
     j.invoiceDue = j.invoiceHeaderFields.dueDate;
     j.poNumber = j.invoiceHeaderFields.poNumber||j.poNumber;
     // Keep invoiceAmount in sync with the ex-GST line items total. The GST-inclusive
@@ -19662,7 +19654,7 @@ function generateInvoicePDF(jobId, mode){
   // sum matches the recorded invoice amount are already GST-inclusive and are
   // displayed without a second GST addition.
   const _linesMatchRecordedTotal = !isDeposit && Number(invAmt)>0 && Math.abs(lineTotal-Number(invAmt))<=0.02;
-  const _finalGstInclusive = !isDeposit && j.invoiceAmountIncludesGST !== false;
+  const _finalGstInclusive = !isDeposit;
   const _usingLines = !_finalGstInclusive && !isDeposit && (j.invoiceLines && (j.invoiceLines.length || 0) >= 1) && !(Number(j.depositAmount) > 0) && !_linesMatchRecordedTotal;
   let _subEx, _gstAmt, _totalInc;
   if (_finalGstInclusive) {
@@ -20927,7 +20919,7 @@ function _mobMarkPaid(jobId){
   if(!confirm('Mark ' + j.jobNumber + ' as PAID?')) return;
   j.status = 'paid';
   j.paidDate = today();
-  if(!j.invoiceAmount && j.quoteAmount) { j.invoiceAmount = j.quoteAmount; j.invoiceAmountIncludesGST = true; }
+  if(!j.invoiceAmount && j.quoteAmount) j.invoiceAmount = j.quoteAmount;
   if(!j.invoiceNumber) j.invoiceNumber = j.jobNumber;
   save();
   renderMain();
@@ -21629,8 +21621,6 @@ function raiseBalanceInvoice(jobId){
   const nextNum = 'SAI_' + (counters.SAI++);
   j.invoiceNumber = nextNum;
   j.invoiceAmount = b.balance.toFixed(2);
-  j.invoiceAmountIncludesGST = true;
-  j.jobsAmountMode = 'final';
   const dueDate = new Date();
   dueDate.setDate(dueDate.getDate() + payTermsDays(CFG.invoicePaymentTerms||CFG.bizPaymentTerms,7));
   j.invoiceDue = dueDate.toISOString().split('T')[0];
@@ -23062,8 +23052,6 @@ window.addEventListener('beforeunload', (e) => {
       const inv = Number(j.invoiceAmount) || 0;
       if (dep > 0 && inv === q && q > 0) {
         j.invoiceAmount = (q - dep).toFixed(2);
-        j.invoiceAmountIncludesGST = true;
-        j.jobsAmountMode = 'final';
         repaired++;
       }
       // Ensure SAQ jobs don't have revenue flags that might trip up older logic
