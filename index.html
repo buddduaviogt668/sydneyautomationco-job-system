@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="en"><head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -1356,6 +1356,27 @@ jobs.forEach(j => {
   }
 });
 if (_jobsDirty) localStorage.setItem('sac:jobs', JSON.stringify(jobs));
+
+// ─── MIGRATION: Tag pre-GST-registration jobs so they never get GST added ────
+// You were not registered for GST until after SAI_100089 (13 July 2026).
+// Any SAI job ≤ 100089 that has invoice line items must NOT have 10% added
+// to its display amount. We stamp gstExempt:true on those records once so
+// jobAmountDisplay() can skip the GST multiplication for them permanently.
+(function _migratePreGstJobs() {
+  const LAST_PRE_GST = 100089; // SAI_100089 was your last non-GST invoice
+  let dirty = false;
+  jobs.forEach(j => {
+    if (j.gstExempt) return; // already tagged
+    const m = (j.jobNumber || '').match(/^SAI_(\d+)$/);
+    if (!m) return;
+    const num = parseInt(m[1], 10);
+    if (num <= LAST_PRE_GST) {
+      j.gstExempt = true;
+      dirty = true;
+    }
+  });
+  if (dirty) localStorage.setItem('sac:jobs', JSON.stringify(jobs));
+})();
 
 // ─── FILE SYSTEM ACCESS API ───────────────────────────────────────────────────
 // Writes to a real .json file on disk on every save. Far more reliable than
@@ -19609,10 +19630,15 @@ function openInvoiceLineEditor(jobId){
     j.invoiceNumber = j.invoiceHeaderFields.invoiceNumber;
     j.invoiceDue = j.invoiceHeaderFields.dueDate;
     j.poNumber = j.invoiceHeaderFields.poNumber||j.poNumber;
-    // Keep invoiceAmount in sync with the ex-GST line items total. The GST-inclusive
-    // total is derived at display time (jobAmountDisplay adds GST for 2+ line items).
+    // Store invoiceAmount as GST-INCLUSIVE for GST-registered businesses so that
+    // jobRevenue() (which reads invoiceAmount directly) reflects actual takings.
+    // Pre-GST jobs carry gstExempt:true -- their lineTotal is the exact charge.
     const lineTotal = j.invoiceLines.reduce((s,l)=>s+(l.qty*l.unit),0);
-    if(lineTotal > 0) j.invoiceAmount = lineTotal;
+    if (lineTotal > 0) {
+      const gstOn = (typeof CFG !== 'undefined') && CFG.gstRegistered !== false;
+      const gstRate = (typeof CFG !== 'undefined') ? (Number(CFG.gst) || 0.1) : 0.1;
+      j.invoiceAmount = (gstOn && !j.gstExempt) ? lineTotal * (1 + gstRate) : lineTotal;
+    }
     save();
     overlay.remove();
     generateInvoicePDF(jobId);
