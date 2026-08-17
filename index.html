@@ -2670,7 +2670,7 @@ function jobRevenue(j) {
   if ((j.jobNumber || '').startsWith('SAQ') || j.type === 'SAQ') return 0;
   if (j.status !== 'paid') return 0;
   const dep = Math.max(0, Number(j.depositAmount) || 0);
-  const inv = Math.max(0, Number(j.invoiceAmount) || 0);
+  const inv = Math.max(0, Number(j.invoiceAmount) > 0 ? jobAmountDisplay(j) : 0);
   const collected = dep + inv;
   // Revenue = money actually collected (deposit + invoice). No cap at the quote:
   // quotes can be stale/lower than the final invoice (e.g. GST), so capping
@@ -2679,10 +2679,18 @@ function jobRevenue(j) {
 }
 
 // ─── JOB AMOUNT HELPER (Jobs-section display only) ────────────────────────────
-// The invoice amount is already the final amount shown on the invoice/PDF.
-// The Jobs list must display that stored amount directly and must not recalculate GST.
+// Legacy invoice records store ex-GST line totals, so the Jobs list adds GST for
+// those records. Explicitly GST-inclusive records are displayed unchanged.
 function jobAmountDisplay(j) {
-  return Number(j.invoiceAmount || j.quoteAmount || 0);
+  const stored = Number(j.invoiceAmount || j.quoteAmount || 0);
+  if (j.invoiceAmountIncludesGST === true) return stored;
+  const hasLines = j.invoiceLines && j.invoiceLines.length >= 1;
+  const splitDeposit = Number(j.depositAmount) > 0;
+  if (CFG.gstRegistered !== false && hasLines && !splitDeposit) {
+    const lineTotal = j.invoiceLines.reduce((s,l) => s + ((Number(l.qty)||0) * (Number(l.unit)||0)), 0);
+    if (lineTotal > 0) return lineTotal * (1 + (Number(CFG.gst)||0.1));
+  }
+  return stored;
 }
 
 // ─── JOB OUTSTANDING HELPER ──────────────────────────────────────────────────
