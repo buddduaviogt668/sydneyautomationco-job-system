@@ -8874,13 +8874,17 @@ function openVisualQuote(jobId) {
     .vq-t-row { display: flex; justify-content: space-between; align-items: center; gap: 40px;
       padding: 5px 0; font-size: 13px; color: #6b7a94; border-bottom: 1px solid #d8dde6; }
     .vq-t-row:last-child { border-bottom: none; }
-    .vq-t-row.grand { font-family: 'Barlow Condensed', sans-serif; font-size: 17px; font-weight: 800;
+    .vq-t-row.grand { font-family: 'Barlow Condensed', sans-serif; font-size: 20px; font-weight: 800;
       letter-spacing: .05em; text-transform: uppercase; color: #1e2d4e; border-top: 2px solid #1e2d4e;
-      margin-top: 6px; padding-top: 10px; border-bottom: none; }
+      margin-top: 6px; padding-top: 12px; border-bottom: none; }
     .vq-t-val { font-size: 13px; font-weight: 600; color: #1e2d4e; border: none; outline: none;
-      background: transparent; text-align: right; width: 110px; display: inline-block; }
-    .vq-t-row.grand .vq-t-val { font-family: 'Barlow Condensed', sans-serif; font-size: 17px;
-      font-weight: 800; color: #f5821f; }
+      background: transparent; text-align: right; width: 150px; display: inline-block; }
+    .vq-t-row.grand .vq-t-val { font-family: 'Barlow Condensed', sans-serif; font-size: 25px;
+      font-weight: 900; color: #f5821f; }
+    .vq-card-total { margin-top: 12px; background: linear-gradient(135deg,#635bff,#4f46e5); border-radius: 8px; padding: 13px 16px; color: #fff; box-shadow: 0 4px 12px rgba(79,70,229,.22); }
+    .vq-card-total-label { font-size: 10px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; opacity: .9; }
+    .vq-card-total-amount { margin-top: 3px; font-family: 'Barlow Condensed', sans-serif; font-size: 24px; font-weight: 900; letter-spacing: .02em; }
+    .vq-card-total-note { margin-top: 3px; font-size: 10px; opacity: .8; }
     /* NOTES */
     .vq-notes { padding: 16px 36px; background: #f7f8fa; border-bottom: 1px solid #d8dde6; }
     .vq-notes textarea { width: 100%; font-size: 13px; line-height: 1.65; color: #1e2d4e;
@@ -9017,6 +9021,11 @@ function openVisualQuote(jobId) {
         <div class="vq-t-row grand">
           <span>Total Due (inc GST)</span>
           <input class="vq-t-val" id="vqTotal" value="" placeholder="$0.00" />
+        </div>
+        <div id="vqCardPayTotal" class="vq-card-total">
+          <div class="vq-card-total-label">If paying by card</div>
+          <div id="vqCardPayAmount" class="vq-card-total-amount">$0.00</div>
+          <div class="vq-card-total-note">Includes 1.7% card processing fee</div>
         </div>
       </div>
     </div>
@@ -9190,6 +9199,8 @@ function openVisualQuote(jobId) {
     if (gstLabel) gstLabel.textContent = 'GST (' + gstPct + '%)';
     if (gstRow) gstRow.style.display = gstOn ? '' : 'none';
     if (totalEl) totalEl.value = fmt$(total);
+    var cardPayEl = document.getElementById('vqCardPayAmount');
+    if (cardPayEl) cardPayEl.textContent = fmt$(total + total * 0.017);
     var cardFeeEl = document.getElementById('vqCardFeeBox');
     if (cardFeeEl) {
       var cardFee = total * 0.017;
@@ -9273,6 +9284,7 @@ function openVisualQuote(jobId) {
     html += 'tr:nth-child(even) td{background:#f7f8fa}';
     html += '.totals{display:flex;justify-content:flex-end;padding:0 36px;border-bottom:1px solid #d8dde6}';
     html += '.tot-inner{min-width:270px;padding:14px 0}';
+    html += '.card-total{margin-top:12px;background:linear-gradient(135deg,#635bff,#4f46e5);border-radius:8px;padding:13px 16px;color:#fff;box-shadow:0 4px 12px rgba(79,70,229,.22)}.card-total-label{font-size:10px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;opacity:.9}.card-total-amount{margin-top:3px;font-family:"Barlow Condensed",sans-serif;font-size:24px;font-weight:900}.card-total-note{margin-top:3px;font-size:10px;opacity:.8}';
     html += '.t-row{display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid #d8dde6;color:#6b7a94;font-size:13px}';
     html += '.t-row.grand{font-family:"Barlow Condensed",sans-serif;font-size:17px;font-weight:800;color:#1e2d4e;border-top:2px solid #1e2d4e;margin-top:6px;padding-top:10px;border-bottom:none}';
     html += '.t-row.grand .tv{color:#f5821f}';
@@ -9319,7 +9331,8 @@ function openVisualQuote(jobId) {
     html += '<div class="totals"><div class="tot-inner">';
     html += '<div class="t-row"><span>Subtotal (ex GST)</span><span>' + fmt(subtotal) + '</span></div>';
     if (gstOn) html += '<div class="t-row"><span>GST (' + gstPct + '%)</span><span>' + fmt(gst) + '</span></div>';
-    html += '<div class="t-row grand"><span>Total Due' + (gstOn ? ' (inc GST)' : '') + '</span><span class="tv">' + fmt(total) + '</span></div>';
+    html += '<div class="t-row grand"><span>Total Due' + (gstOn ? ' (inc GST)' : '') + '</span><span class="tv" style="font-size:24px">' + fmt(total) + '</span></div>';
+    html += '<div class="card-total"><div class="card-total-label">If paying by card</div><div class="card-total-amount">' + fmt(total + total * 0.017) + '</div><div class="card-total-note">Includes 1.7% card processing fee</div></div>';
     html += '</div></div>';
 
     var n = g('vqNotes');
