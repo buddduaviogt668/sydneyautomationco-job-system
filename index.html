@@ -10103,6 +10103,7 @@ function _renderQuoteEditor(jobId){
           <button onclick="_qsAddLabourLine()" style="background:#0ea5e9;color:#fff;border:none;border-radius:8px;padding:9px 16px;font-size:13px;font-weight:700;cursor:pointer">+ Labour</button>
           <button onclick="_qsAddCustomLine()" style="background:#f59e0b;color:#0f172a;border:none;border-radius:8px;padding:9px 16px;font-size:13px;font-weight:700;cursor:pointer">+ Custom Line</button>
           <button onclick="_qsAddCallout()" style="background:#f1f5f9;color:#334155;border:1px solid #e2e8f0;border-radius:8px;padding:9px 16px;font-size:13px;font-weight:600;cursor:pointer">+ Callout</button>
+          <button onclick="_qsAddGoodwillCredit()" style="background:#ecfdf5;color:#047857;border:1px solid #a7f3d0;border-radius:8px;padding:9px 16px;font-size:13px;font-weight:700;cursor:pointer">+ Goodwill Credit</button>
           <button onclick="_qsAddTravel()" style="background:#f1f5f9;color:#334155;border:1px solid #e2e8f0;border-radius:8px;padding:9px 16px;font-size:13px;font-weight:600;cursor:pointer">+ Travel/Tolls</button>
         </div>
 
@@ -10117,8 +10118,8 @@ function _renderQuoteEditor(jobId){
             </div>`:''}
           ${_QS.lines.map((line,idx)=>{
             const amount = (Number(line.qty)||0)*(Number(line.unit)||0);
-            const rowBg = line.type==='part'?'#fff': line.type==='labour'?'#f0f9ff':'#fffbeb';
-            const typeTag = line.type==='part'?'<span style="font-size:9px;background:#dbeafe;color:#1d4ed8;border-radius:4px;padding:1px 5px;font-weight:700;vertical-align:middle;margin-left:4px">PART</span>':line.type==='labour'?'<span style="font-size:9px;background:#e0f2fe;color:#0284c7;border-radius:4px;padding:1px 5px;font-weight:700;vertical-align:middle;margin-left:4px">LABOUR</span>':'<span style="font-size:9px;background:#fef3c7;color:#d97706;border-radius:4px;padding:1px 5px;font-weight:700;vertical-align:middle;margin-left:4px">CUSTOM</span>';
+            const rowBg = line.type==='part'?'#fff': line.type==='labour'?'#f0f9ff': line.type==='credit'?'#ecfdf5':'#fffbeb';
+            const typeTag = line.type==='part'?'<span style="font-size:9px;background:#dbeafe;color:#1d4ed8;border-radius:4px;padding:1px 5px;font-weight:700;vertical-align:middle;margin-left:4px">PART</span>':line.type==='labour'?'<span style="font-size:9px;background:#e0f2fe;color:#0284c7;border-radius:4px;padding:1px 5px;font-weight:700;vertical-align:middle;margin-left:4px">LABOUR</span>':line.type==='credit'?'<span style="font-size:9px;background:#d1fae5;color:#047857;border-radius:4px;padding:1px 5px;font-weight:700;vertical-align:middle;margin-left:4px">CREDIT</span>':'<span style="font-size:9px;background:#fef3c7;color:#d97706;border-radius:4px;padding:1px 5px;font-weight:700;vertical-align:middle;margin-left:4px">CUSTOM</span>';
             return `<div style="background:${rowBg};border-bottom:1px solid #f8fafc;padding:10px 16px;display:grid;grid-template-columns:1fr 80px 100px 100px 36px;gap:8px;align-items:center">
               <div>
                 ${typeTag}
@@ -10131,7 +10132,7 @@ function _renderQuoteEditor(jobId){
               <div>
                 <div style="position:relative">
                   <span style="position:absolute;left:8px;top:50%;transform:translateY(-50%);font-size:12px;color:#94a3b8">$</span>
-                  <input type="number" min="0" step="0.01" value="${Number(line.unit).toFixed(2)}" oninput="_qsLineUpdate('${line.id}','unit',this.value)" style="width:100%;border:1px solid #e2e8f0;border-radius:6px;padding:5px 5px 5px 20px;text-align:right;font-size:13px;font-family:'DM Sans',sans-serif;background:#fff">
+                  <input type="number" min="${line.type==='credit'?'-999999':'0'}" step="0.01" value="${Number(line.unit).toFixed(2)}" oninput="_qsLineUpdate('${line.id}','unit',this.value)" style="width:100%;border:1px solid #e2e8f0;border-radius:6px;padding:5px 5px 5px 20px;text-align:right;font-size:13px;font-family:'DM Sans',sans-serif;background:#fff">
                 </div>
               </div>
               <div style="text-align:right;font-size:14px;font-weight:700;color:#0f172a">${fmt$(amount)}</div>
@@ -10264,6 +10265,20 @@ function _qsAddCallout(){
   _QS.lines.push({
     id:'_'+Date.now()+'_'+Math.random().toString(36).slice(2),
     type:'custom', desc:'Callout Fee', qty:1, unit:CFG.callout||195, custom:true
+  });
+  renderMain();
+}
+
+function _qsAddGoodwillCredit(){
+  if(!_QS) return;
+  const existing = _QS.lines.find(l=>l.type==='credit' && l.desc && l.desc.toLowerCase().includes('goodwill'));
+  if(existing){ alert('Goodwill credit already on quote'); return; }
+  const callout = _QS.lines.find(l=>l.desc && l.desc.toLowerCase().includes('callout') && l.type!=='credit');
+  if(!callout){ alert('Add a Callout line first, then apply the goodwill credit.'); return; }
+  const calloutAmount = Math.abs((Number(callout.qty)||0) * (Number(callout.unit)||0));
+  _QS.lines.push({
+    id:'_'+Date.now()+'_'+Math.random().toString(36).slice(2),
+    type:'credit', desc:'Goodwill Credit — Callout Fee', qty:1, unit:-calloutAmount, custom:true
   });
   renderMain();
 }
