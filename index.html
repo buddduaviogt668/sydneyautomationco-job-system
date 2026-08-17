@@ -14060,7 +14060,7 @@ function printSiteReport(jobId){
   d.open();
   d.write('<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Site Report — '+j.jobNumber+'</title>');
   d.write('<link href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;600;700;800&family=Barlow+Condensed:wght@700;900&display=swap" rel="stylesheet">');
-  d.write('<style>*{box-sizing:border-box;margin:0;padding:0}body{font-family:Barlow,sans-serif;padding:32px;max-width:920px;margin:0 auto;color:#0e1f3d;background:#fff}@media print{*{-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important}body{padding:0}button{display:none!important}.page{padding:32px}}.photo-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:20px}.photo-item img{width:100%;border-radius:8px;border:1px solid #dde3ec}.photo-item .caption{font-size:11px;color:#64748b;margin-top:4px;padding:0 2px}</style>');
+  d.write('<style>*{box-sizing:border-box;margin:0;padding:0}body{font-family:Barlow,sans-serif;padding:32px;max-width:920px;margin:0 auto;color:#0e1f3d;background:#fff}.photo-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:20px}.photo-item img{width:100%;border-radius:8px;border:1px solid #dde3ec}.photo-item .caption{font-size:11px;color:#64748b;margin-top:4px;padding:0 2px}@media print{*{-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important}body{padding:0}button{display:none!important}.page{padding:32px}.doc-header{background-color:#0e1f3d!important;-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important}}</style>');
   d.write('</head><body><div class="no-print" style="text-align:right;margin-bottom:16px"><button onclick="window.print()" style="background:#0e1f3d;color:#fff;border:none;border-radius:6px;padding:9px 20px;font-size:13px;font-weight:700;cursor:pointer;font-family:Barlow,sans-serif">Print / Save PDF</button></div><div class="page">');
   d.write(docHeader('SITE REPORT', j.jobNumber, 'Date: '+fmtD(today()), j.scheduledDate?'Site Date: '+fmtD(j.scheduledDate):''));
   d.write(docBillTo(c,j));
@@ -15600,7 +15600,7 @@ function docHeader(title, ref, date, validLine){
         <div style="font-size:9px;color:#a8c0e0;letter-spacing:3px">${esc(B.bizTagline||'Lighting Control Specialists')}</div>
       </div>`;
   return `
-  <div style="background:${navyColor};padding:24px 32px;margin:-32px -32px 0 -32px;display:flex;justify-content:space-between;align-items:center">
+  <div class="doc-header" style="background:${navyColor};padding:24px 32px;margin:-32px -32px 0 -32px;display:flex;justify-content:space-between;align-items:center">
     <div style="display:flex;align-items:center;gap:16px">
       ${logoHtml}
     </div>
