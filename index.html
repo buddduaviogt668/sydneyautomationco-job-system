@@ -2783,15 +2783,25 @@ function calcTotalCosts(jobsList, dateFilter) {
 
 // ─── MAIN RENDER ─────────────────────────────────────────────────────────────
 function normalizeConfirmedFinalTotals(){
+  let changed = false;
+  jobs.forEach(function(j){
+    const lineTotal = (j.invoiceLines||[]).reduce(function(s,l){ return s + (Number(l.qty)||0) * (Number(l.unit)||0); }, 0);
+    const recorded = Number(j.invoiceAmount||0);
+    // Correct invoices that were previously increased by exactly 10% GST.
+    if(lineTotal > 0 && recorded > 0 && Math.abs(recorded - lineTotal * 1.1) <= 0.02){
+      j.invoiceAmount = lineTotal.toFixed(2);
+      j.invoiceAmountIncludesGST = true;
+      changed = true;
+    }
+  });
   const target = jobs.find(j => j.jobNumber === 'SAI_100106');
-  if(!target) return false;
-  const changed = Number(target.invoiceAmount) !== 715 || Number(target.quoteAmount) !== 715 || target.invoiceAmountIncludesGST !== true;
-  if(changed){
+  if(target && (Number(target.invoiceAmount) !== 715 || Number(target.quoteAmount) !== 715 || target.invoiceAmountIncludesGST !== true)){
     target.invoiceAmount = '715.00';
     target.quoteAmount = '715.00';
     target.invoiceAmountIncludesGST = true;
-    save();
+    changed = true;
   }
+  if(changed) save();
   return changed;
 }
 function renderMain(){
@@ -19277,20 +19287,13 @@ function generateQuotePDF(jobId){
 
 // ─── INVOICE LINE EDITOR ──────────────────────────────────────────────────────
 // All invoice PDFs go through this editor first. No more auto-guessing line items.
-// Invoice line items are GST-EXCLUSIVE; GST is added on top for the GST-INCLUSIVE
-// total on standalone line-item invoices. Deposit-split invoices keep their amounts.
+// Invoice line items are final GST-inclusive amounts. The PDF splits out the GST component
+// for the tax-invoice presentation but does not add GST on top of the entered total.
 function invLineTotalInc(job, lineTotal){
   const total=Number(lineTotal)||0;
   if(CFG.gstRegistered === false) return total;
-  // Some invoices are entered as final GST-inclusive amounts. Do not add GST again.
-  if(job.invoiceAmountIncludesGST === true) return total;
-  if(!job.invoiceLines || (job.invoiceLines.length || 0) < 1) return total;
-  if(Number(job.depositAmount) > 0) return total;
-  // Existing records may store line items already GST-inclusive. If their sum
-  // matches the recorded invoice/quote amount, do not add GST a second time.
-  const recorded=Number(job.invoiceAmount||job.quoteAmount||0);
-  if(recorded>0 && Math.abs(total-recorded)<=0.02) return total;
-  return total * (1 + (Number(CFG.gst)||0.1));
+  // Standard invoices use entered line totals as the final GST-inclusive amount.
+  return total;
 }
 
 function openInvoiceLineEditor(jobId){
@@ -19300,6 +19303,7 @@ function openInvoiceLineEditor(jobId){
 
   if(!j.invoiceLines || !j.invoiceLines.length){
     const invAmt = Number(j.invoiceAmount||j.quoteAmount||0);
+    j.invoiceAmountIncludesGST = true;
     j.invoiceLines = [{id:Date.now().toString(), desc:j.scope||'Works as agreed', qty:1, unit:invAmt, amount:invAmt}];
   }
 
@@ -19602,6 +19606,7 @@ function openInvoiceLineEditor(jobId){
   window._ilSaveAndPrint = function(){
     syncHeaderFields();
     // Sync back to job fields
+    j.invoiceAmountIncludesGST = true;
     j.invoiceNumber = j.invoiceHeaderFields.invoiceNumber;
     j.invoiceDue = j.invoiceHeaderFields.dueDate;
     j.poNumber = j.invoiceHeaderFields.poNumber||j.poNumber;
@@ -19650,7 +19655,7 @@ function generateInvoicePDF(jobId, mode){
   // sum matches the recorded invoice amount are already GST-inclusive and are
   // displayed without a second GST addition.
   const _linesMatchRecordedTotal = !isDeposit && Number(invAmt)>0 && Math.abs(lineTotal-Number(invAmt))<=0.02;
-  const _finalGstInclusive = !isDeposit && j.invoiceAmountIncludesGST === true;
+  const _finalGstInclusive = !isDeposit;
   const _usingLines = !_finalGstInclusive && !isDeposit && (j.invoiceLines && (j.invoiceLines.length || 0) >= 1) && !(Number(j.depositAmount) > 0) && !_linesMatchRecordedTotal;
   let _subEx, _gstAmt, _totalInc;
   if (_finalGstInclusive) {
