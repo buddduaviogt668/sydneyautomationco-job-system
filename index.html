@@ -1375,17 +1375,23 @@ function _migratePreGstJobs() {
       dirty = true;
     }
   });
-  // Repair invoice amounts that were double-taxed: stored = base × 1.1².
-  // Post-GST full invoices store the ex-GST amount (e.g. 650), and the display
-  // adds GST once. If a record accidentally had GST applied twice (stored equals
-  // quote × 1.21, e.g. 786.50 = 650 × 1.21), snap it back to the ex-GST base so
-  // the correct GST-inclusive total (650 × 1.1 = 715) is shown.
+  // Repair invoice amounts that were double-taxed (GST applied twice).
+  //   • split-deposit balance: stored = balance × 1.1 → snap back to balance
+  //   • full invoice:         stored = quote × 1.21  → snap back to ex-GST base
+  const gst = Number(CFG.gst) || 0.1;
   jobs.forEach(j => {
-    if (j.gstExempt || (j.jobNumber || '').startsWith('SAQ') || j.type === 'SAQ') return;
-    if (Number(j.depositAmount) > 0) return; // split-deposit balances are already GST-inclusive
+    if ((j.jobNumber || '').startsWith('SAQ') || j.type === 'SAQ') return;
     const base = Number(j.quoteAmount);
     const stored = Number(j.invoiceAmount);
-    if (base > 0 && stored > 0 && Math.abs(stored - base * 1.21) <= 0.02) {
+    if (!(base > 0) || !(stored > 0)) return;
+    const dep = Number(j.depositAmount) || 0;
+    if (dep > 0) {
+      const balance = base - dep;
+      if (balance > 0 && Math.abs(stored - balance * (1 + gst)) <= 0.02) {
+        j.invoiceAmount = balance.toFixed(2);
+        dirty = true;
+      }
+    } else if (Math.abs(stored - base * 1.21) <= 0.02) {
       j.invoiceAmount = base.toFixed(2);
       dirty = true;
     }
@@ -2739,19 +2745,22 @@ function splitDepositBalance(j){
 // Returns the one consistent figure used everywhere a job's total is shown
 // (Jobs list, Dashboard, Invoice Ledger, Aged Debtors, Financials, Profitability).
 //   • pre-GST jobs (SAI ≤ 100089, gstExempt)  → stored amount as-is (no GST)
-//   • split-deposit balance invoices          → stored GST-inclusive balance
-//   • post-GST full invoices                  → stored ex-GST amount + 10% GST
+//   • split-deposit balance invoices          → GST-inclusive balance (quote − deposit)
+//   • post-GST full invoices where the quote ≠ invoice → invoice is ex-GST → +10% GST
+//   • otherwise                               → stored amount is already GST-inclusive
 function jobAmountDisplay(j) {
   const stored = Number(j.invoiceAmount || j.quoteAmount || 0);
   if (stored <= 0) return 0;
   if (j.gstExempt === true) return stored;
-  const gst = Number(CFG.gst) || 0.1;
   if (Number(j.depositAmount) > 0) {
     const sb = splitDepositBalance(j);
-    if (sb != null && Math.abs(stored - sb * (1 + gst)) <= 0.02) return sb;
-    return stored;
+    return sb != null ? sb : stored;
   }
-  if (CFG.gstRegistered !== false) return stored * (1 + gst);
+  const gst = Number(CFG.gst) || 0.1;
+  const quote = Number(j.quoteAmount) || 0;
+  if (quote > 0 && Math.abs(quote - stored) > 0.02 && CFG.gstRegistered !== false) {
+    return stored * (1 + gst);
+  }
   return stored;
 }
 
