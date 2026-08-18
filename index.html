@@ -1375,6 +1375,21 @@ function _migratePreGstJobs() {
       dirty = true;
     }
   });
+  // Repair invoice amounts that were double-taxed: stored = base × 1.1².
+  // Post-GST full invoices store the ex-GST amount (e.g. 650), and the display
+  // adds GST once. If a record accidentally had GST applied twice (stored equals
+  // quote × 1.21, e.g. 786.50 = 650 × 1.21), snap it back to the ex-GST base so
+  // the correct GST-inclusive total (650 × 1.1 = 715) is shown.
+  jobs.forEach(j => {
+    if (j.gstExempt || (j.jobNumber || '').startsWith('SAQ') || j.type === 'SAQ') return;
+    if (Number(j.depositAmount) > 0) return; // split-deposit balances are already GST-inclusive
+    const base = Number(j.quoteAmount);
+    const stored = Number(j.invoiceAmount);
+    if (base > 0 && stored > 0 && Math.abs(stored - base * 1.21) <= 0.02) {
+      j.invoiceAmount = base.toFixed(2);
+      dirty = true;
+    }
+  });
   if (dirty) {
     try { localStorage.setItem('sac:jobs', JSON.stringify(jobs)); } catch(e) {}
   }
@@ -2723,11 +2738,21 @@ function splitDepositBalance(j){
 // ─── CANONICAL DISPLAY AMOUNT (single source of truth) ──────────────────────
 // Returns the one consistent figure used everywhere a job's total is shown
 // (Jobs list, Dashboard, Invoice Ledger, Aged Debtors, Financials, Profitability).
-// The user enters invoice totals as the final GST-inclusive amounts themselves,
-// so the stored amount is always displayed AS-IS — never auto-add GST on top.
+//   • pre-GST jobs (SAI ≤ 100089, gstExempt)  → stored amount as-is (no GST)
+//   • split-deposit balance invoices          → stored GST-inclusive balance
+//   • post-GST full invoices                  → stored ex-GST amount + 10% GST
 function jobAmountDisplay(j) {
   const stored = Number(j.invoiceAmount || j.quoteAmount || 0);
-  return stored > 0 ? stored : 0;
+  if (stored <= 0) return 0;
+  if (j.gstExempt === true) return stored;
+  const gst = Number(CFG.gst) || 0.1;
+  if (Number(j.depositAmount) > 0) {
+    const sb = splitDepositBalance(j);
+    if (sb != null && Math.abs(stored - sb * (1 + gst)) <= 0.02) return sb;
+    return stored;
+  }
+  if (CFG.gstRegistered !== false) return stored * (1 + gst);
+  return stored;
 }
 
 // ─── JOB OUTSTANDING HELPER ──────────────────────────────────────────────────
