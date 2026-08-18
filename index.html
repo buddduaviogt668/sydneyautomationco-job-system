@@ -1362,7 +1362,7 @@ if (_jobsDirty) localStorage.setItem('sac:jobs', JSON.stringify(jobs));
 // Any SAI job ≤ 100089 that has invoice line items must NOT have 10% added
 // to its display amount. We stamp gstExempt:true on those records once so
 // jobAmountDisplay() can skip the GST multiplication for them permanently.
-(function _migratePreGstJobs() {
+function _migratePreGstJobs() {
   const LAST_PRE_GST = 100089; // SAI_100089 was your last non-GST invoice
   let dirty = false;
   jobs.forEach(j => {
@@ -1375,8 +1375,13 @@ if (_jobsDirty) localStorage.setItem('sac:jobs', JSON.stringify(jobs));
       dirty = true;
     }
   });
-  if (dirty) localStorage.setItem('sac:jobs', JSON.stringify(jobs));
-})();
+  if (dirty) {
+    try { localStorage.setItem('sac:jobs', JSON.stringify(jobs)); } catch(e) {}
+  }
+}
+// Run once at startup for localStorage-seeded data, and again after any file
+// restore (restoreFromData) so pre-GST jobs loaded from disk are tagged too.
+_migratePreGstJobs();
 
 // ─── FILE SYSTEM ACCESS API ───────────────────────────────────────────────────
 // Writes to a real .json file on disk on every save. Far more reliable than
@@ -1613,6 +1618,9 @@ function restoreFromData(data) {
       return { ...j, attachments: atts };
     });
     STORE.set('jobs', jobs);
+    // Pre-GST jobs loaded from a data file must be tagged gstExempt so the Jobs
+    // list never adds 10% to their totals (runs again after the disk restore).
+    _migratePreGstJobs();
   }
   if (data.counters)  { counters  = data.counters;  STORE.set('counters',  counters); }
   const kmData = data.kmlog || data.kmLog;
@@ -2702,15 +2710,36 @@ function jobRevenue(j) {
 // ─── JOB AMOUNT HELPER (Jobs-section display only) ────────────────────────────
 // Legacy invoice records store ex-GST line totals, so the Jobs list adds GST for
 // those records. Explicitly GST-inclusive records are displayed unchanged.
+// The GST-inclusive balance for a split-deposit job is always quote − deposit.
+// If the stored invoice amount is the GST-inflated figure (stored × 1.1), return
+// the true balance so a double-GST balance never shows (e.g. 1791.44 vs 1628.58).
+function splitDepositBalance(j){
+  const d = Number(j.depositAmount);
+  if(!(d > 0)) return null;
+  const bal = (Number(j.quoteAmount)||0) - d;
+  if(!(bal > 0)) return null;
+  return bal;
+}
 function jobAmountDisplay(j) {
   const stored = Number(j.invoiceAmount || j.quoteAmount || 0);
   if (j.invoiceAmountIncludesGST === true) return stored;
   if (j.gstExempt === true) return stored;
+  const sb = splitDepositBalance(j);
+  if (sb != null && stored > 0) {
+    const gst = Number(CFG.gst)||0.1;
+    if (Math.abs(stored - sb * (1 + gst)) <= 0.02) return sb;
+  }
   const hasLines = j.invoiceLines && j.invoiceLines.length >= 1;
   const splitDeposit = Number(j.depositAmount) > 0;
   if (CFG.gstRegistered !== false && hasLines && !splitDeposit) {
     const lineTotal = j.invoiceLines.reduce((s,l) => s + ((Number(l.qty)||0) * (Number(l.unit)||0)), 0);
-    if (lineTotal > 0) return lineTotal * (1 + (Number(CFG.gst)||0.1));
+    // Only treat line items as an ex-GST charge when they actually match the
+    // recorded invoice amount. If the lines are partial/corrupted (e.g. a lone
+    // 8.40 parking line vs a 558.40 invoice), the stored invoice amount is
+    // authoritative — don't recompute the total from those lines.
+    if (lineTotal > 0 && stored > 0 && Math.abs(lineTotal - stored) <= 0.02) {
+      return lineTotal * (1 + (Number(CFG.gst)||0.1));
+    }
   }
   return stored;
 }
@@ -19672,7 +19701,14 @@ function generateInvoicePDF(jobId, mode){
   const _termsDefault = (_hEom ? 'Payment due by the end of the month following the invoice date.' : (resolvedTermDays===0 ? 'Payment due on invoice date.' : 'Payment is due within '+resolvedTermsLabel+' of invoice date.')) + ' This business is registered for GST. This is a tax invoice for GST purposes.';
   const isPaid = isDeposit ? (Number(j.depositAmount)>0 && !!j.depositDate) : j.status==='paid';
   const depAmt = isDeposit ? (Number(dh.depositAmount)||depositAmountFor(j)) : 0;
-  const invAmt = isDeposit ? depAmt : Number(j.invoiceAmount||j.quoteAmount||0);
+  let invAmt = isDeposit ? depAmt : Number(j.invoiceAmount||j.quoteAmount||0);
+  if(!isDeposit && invAmt > 0){
+    const sb = splitDepositBalance(j);
+    if(sb != null){
+      const gst = Number(CFG.gst)||0.1;
+      if(Math.abs(invAmt - sb * (1 + gst)) <= 0.02) invAmt = sb;
+    }
+  }
 
   // Build line items
   const lines = isDeposit
