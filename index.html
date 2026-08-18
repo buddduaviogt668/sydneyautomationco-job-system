@@ -2720,27 +2720,25 @@ function splitDepositBalance(j){
   if(!(bal > 0)) return null;
   return bal;
 }
+// ─── CANONICAL DISPLAY AMOUNT (single source of truth) ──────────────────────
+// Returns the one consistent figure used everywhere a job's total is shown
+// (Jobs list, Dashboard, Invoice Ledger, Financials, Profitability).
+//   • pre-GST jobs (SAI ≤ 100089, gstExempt)  → stored amount as-is (no GST)
+//   • records flagged invoiceAmountIncludesGST → stored amount as-is (already incl. GST)
+//   • split-deposit balance invoices          → stored GST-inclusive balance
+//   • post-GST full invoices                  → stored ex-GST amount + 10% GST
 function jobAmountDisplay(j) {
   const stored = Number(j.invoiceAmount || j.quoteAmount || 0);
+  if (stored <= 0) return 0;
   if (j.invoiceAmountIncludesGST === true) return stored;
   if (j.gstExempt === true) return stored;
-  const sb = splitDepositBalance(j);
-  if (sb != null && stored > 0) {
-    const gst = Number(CFG.gst)||0.1;
-    if (Math.abs(stored - sb * (1 + gst)) <= 0.02) return sb;
+  const gst = Number(CFG.gst)||0.1;
+  if (Number(j.depositAmount) > 0) {
+    const sb = splitDepositBalance(j);
+    if (sb != null && Math.abs(stored - sb * (1 + gst)) <= 0.02) return sb;
+    return stored;
   }
-  const hasLines = j.invoiceLines && j.invoiceLines.length >= 1;
-  const splitDeposit = Number(j.depositAmount) > 0;
-  if (CFG.gstRegistered !== false && hasLines && !splitDeposit) {
-    const lineTotal = j.invoiceLines.reduce((s,l) => s + ((Number(l.qty)||0) * (Number(l.unit)||0)), 0);
-    // Only treat line items as an ex-GST charge when they actually match the
-    // recorded invoice amount. If the lines are partial/corrupted (e.g. a lone
-    // 8.40 parking line vs a 558.40 invoice), the stored invoice amount is
-    // authoritative — don't recompute the total from those lines.
-    if (lineTotal > 0 && stored > 0 && Math.abs(lineTotal - stored) <= 0.02) {
-      return lineTotal * (1 + (Number(CFG.gst)||0.1));
-    }
-  }
+  if (CFG.gstRegistered !== false) return stored * (1 + gst);
   return stored;
 }
 
@@ -3978,7 +3976,7 @@ function renderInvoices(){
             ? `<div>
                 <div style="font-size:14px;font-weight:700;color:#0f172a">${fmt$(rev)}</div>
                 <div style="font-size:10px;color:#10b981;font-weight:600;margin-top:1px">✓ dep ${fmt$(depAmt)} paid</div>
-                <div style="font-size:10px;color:#f97316;font-weight:600">bal ${fmt$(invAmt)}</div>
+                <div style="font-size:10px;color:#f97316;font-weight:600">bal ${fmt$(jobAmountDisplay(j))}</div>
               </div>`
             : `<div style="font-size:14px;font-weight:700">${fmt$(rev)}</div>`;
           return`<div style="display:grid;grid-template-columns:140px 1fr 130px 110px 120px 160px;padding:14px 16px;border-bottom:1px solid #f8fafc;align-items:center;background:${od?'#fff5f5':'transparent'}">
