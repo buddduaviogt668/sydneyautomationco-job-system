@@ -2722,24 +2722,12 @@ function splitDepositBalance(j){
 }
 // ─── CANONICAL DISPLAY AMOUNT (single source of truth) ──────────────────────
 // Returns the one consistent figure used everywhere a job's total is shown
-// (Jobs list, Dashboard, Invoice Ledger, Financials, Profitability).
-//   • pre-GST jobs (SAI ≤ 100089, gstExempt)  → stored amount as-is (no GST)
-//   • records flagged invoiceAmountIncludesGST → stored amount as-is (already incl. GST)
-//   • split-deposit balance invoices          → stored GST-inclusive balance
-//   • post-GST full invoices                  → stored ex-GST amount + 10% GST
+// (Jobs list, Dashboard, Invoice Ledger, Aged Debtors, Financials, Profitability).
+// The user enters invoice totals as the final GST-inclusive amounts themselves,
+// so the stored amount is always displayed AS-IS — never auto-add GST on top.
 function jobAmountDisplay(j) {
   const stored = Number(j.invoiceAmount || j.quoteAmount || 0);
-  if (stored <= 0) return 0;
-  if (j.invoiceAmountIncludesGST === true) return stored;
-  if (j.gstExempt === true) return stored;
-  const gst = Number(CFG.gst)||0.1;
-  if (Number(j.depositAmount) > 0) {
-    const sb = splitDepositBalance(j);
-    if (sb != null && Math.abs(stored - sb * (1 + gst)) <= 0.02) return sb;
-    return stored;
-  }
-  if (CFG.gstRegistered !== false) return stored * (1 + gst);
-  return stored;
+  return stored > 0 ? stored : 0;
 }
 
 // ─── JOB OUTSTANDING HELPER ──────────────────────────────────────────────────
