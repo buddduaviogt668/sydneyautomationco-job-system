@@ -1396,6 +1396,19 @@ function _migratePreGstJobs() {
       dirty = true;
     }
   });
+  // Explicit corrections the user has confirmed. For these the stored invoice
+  // amount is ex-GST, so the quote (GST-inclusive total) is set to inv × 1.1.
+  const confirmedQuotes = { 'SAI_100094': '605' }; // 550 ex-GST → 605 GST-inclusive
+  jobs.forEach(j => {
+    const nn = (j.jobNumber || '').trim();
+    if (j.gstExempt || !confirmedQuotes[nn]) return;
+    const ex = Number(j.invoiceAmount);
+    const want = Number(confirmedQuotes[nn]);
+    if (ex > 0 && Math.abs(Number(j.quoteAmount || 0) - want) > 0.02) {
+      j.quoteAmount = want.toFixed(2);
+      dirty = true;
+    }
+  });
   if (dirty) {
     try { localStorage.setItem('sac:jobs', JSON.stringify(jobs)); } catch(e) {}
   }
