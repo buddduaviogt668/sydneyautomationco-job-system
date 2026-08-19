@@ -1378,7 +1378,8 @@ function _migratePreGstJobs() {
   // Repair invoice amounts that were double-taxed (GST applied twice).
   //   • split-deposit balance: stored = balance × 1.1 → snap back to balance
   //   • full invoice:         stored = quote × 1.21  → snap back to ex-GST base
-  const gst = Number(CFG.gst) || 0.1;
+  // NOTE: run before CFG is initialised (page startup), so use a literal 10%.
+  const gst = 0.1;
   jobs.forEach(j => {
     if ((j.jobNumber || '').startsWith('SAQ') || j.type === 'SAQ') return;
     const base = Number(j.quoteAmount);
