@@ -1399,7 +1399,7 @@ function _migratePreGstJobs() {
   });
   // Explicit corrections the user has confirmed. For these the stored invoice
   // amount is ex-GST, so the quote (GST-inclusive total) is set to inv × 1.1.
-  const confirmedQuotes = { 'SAI_100094': '605' }; // 550 ex-GST → 605 GST-inclusive
+  const confirmedQuotes = { 'SAI_100094': '605', 'SAI_100097': '2258.92' }; // ex-GST → GST-inclusive
   jobs.forEach(j => {
     const nn = (j.jobNumber || '').trim();
     if (j.gstExempt || !confirmedQuotes[nn]) return;
@@ -2767,7 +2767,7 @@ function jobAmountDisplay(j) {
   if (stored <= 0) return 0;
   // Explicit GST-inclusive totals confirmed by the user, guaranteed regardless of
   // how/when the job data was loaded (quote may still be the ex-GST figure).
-  const confirmed = { 'SAI_100093': 495, 'SAI_100094': 605 };
+  const confirmed = { 'SAI_100093': 495, 'SAI_100094': 605, 'SAI_100097': 2258.92 };
   if (confirmed[j.jobNumber] !== undefined) return confirmed[j.jobNumber];
   if (j.gstExempt === true) return stored;
   if (Number(j.depositAmount) > 0) {
