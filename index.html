@@ -10652,7 +10652,7 @@ function openQuickInvoice(){
   const clientOpts = clients.map(c=>`<option value="${c.id}">${esc(c.company||c.name)}</option>`).join('');
   openModal('custom');
   document.getElementById('modal-title').textContent = '⚡ Quick Invoice';
-  document.getElementById('modal-box').style.maxWidth = '500px';
+  document.getElementById('modal-box').style.maxWidth = '520px';
   document.getElementById('modal-body').innerHTML = `
     <div style="padding:20px;display:flex;flex-direction:column;gap:14px">
       <div>
@@ -10667,8 +10667,13 @@ function openQuickInvoice(){
       </div>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
         <div>
-          <label style="font-size:11px;font-weight:700;color:#64748b;text-transform:uppercase;display:block;margin-bottom:5px">Amount ($) *</label>
-          <input id="qi-amount" type="number" step="0.01" min="0" placeholder="0.00" style="width:100%;padding:11px 14px;border:1px solid #e2e8f0;border-radius:8px;font-size:18px;font-weight:700;font-family:'DM Sans',sans-serif;box-sizing:border-box">
+          <label style="font-size:11px;font-weight:700;color:#64748b;text-transform:uppercase;display:block;margin-bottom:5px">Amount ($ ex GST) *</label>
+          <input id="qi-amount" type="number" step="0.01" min="0" placeholder="0.00"
+            oninput="const v=Number(this.value)||0;const gst=v*0.1;const tot=v*1.1;document.getElementById('qi-inc-preview').textContent=tot.toFixed(2);document.getElementById('qi-gst-preview').textContent=gst.toFixed(2);"
+            style="width:100%;padding:11px 14px;border:1px solid #e2e8f0;border-radius:8px;font-size:18px;font-weight:700;font-family:'DM Sans',sans-serif;box-sizing:border-box">
+          <div id="qi-preview" style="font-size:11px;color:#0369a1;background:#e0f2fe;padding:6px 10px;border-radius:6px;margin-top:6px">
+            +10% GST ($<span id="qi-gst-preview">0.00</span>) = <strong>$<span id="qi-inc-preview">0.00</span></strong> incl. GST
+          </div>
         </div>
         <div>
           <label style="font-size:11px;font-weight:700;color:#64748b;text-transform:uppercase;display:block;margin-bottom:5px">Date</label>
@@ -10689,20 +10694,25 @@ function openQuickInvoice(){
 function _qiCreate(printAfter){
   const clientId = document.getElementById('qi-client')?.value||'';
   const desc = (document.getElementById('qi-desc')?.value||'').trim();
-  const amount = parseFloat(document.getElementById('qi-amount')?.value||0);
+  const exGstAmount = parseFloat(document.getElementById('qi-amount')?.value||0);
   const date = document.getElementById('qi-date')?.value || today();
   const po = (document.getElementById('qi-po')?.value||'').trim();
   if(!clientId){ alert('Select a client.'); return; }
   if(!desc){ alert('Enter a description.'); return; }
-  if(!amount){ alert('Enter an amount.'); return; }
+  if(!exGstAmount){ alert('Enter an amount.'); return; }
   const num = counters['SAI']++;
   const invNum = jobNum('SAI', num);
   const cfgDays = payTermsDays(CFG.invoicePaymentTerms||CFG.bizPaymentTerms, 7);
   const dueDate = (()=>{ if(cfgDays<=0) return ''; const d=new Date(date+'T00:00:00'); d.setDate(d.getDate()+cfgDays); return d.toISOString().split('T')[0]; })();
+  const gstOn = (typeof CFG !== 'undefined') && CFG.gstRegistered !== false;
+  const gstRate = (typeof CFG !== 'undefined') ? (Number(CFG.gst) || 0.1) : 0.1;
+  const incGstTotal = gstOn ? exGstAmount * (1 + gstRate) : exGstAmount;
+
   const newJob = {
     id: 'j_qi_'+Date.now(), type:'SAI', jobNumber:invNum,
     invoiceNumber:invNum, clientId, scope:desc,
-    invoiceAmount:amount.toFixed(2), quoteAmount:amount.toFixed(2),
+    invoiceAmount:incGstTotal.toFixed(2), quoteAmount:incGstTotal.toFixed(2),
+    invoiceLines:[{id:Date.now().toString(), desc:desc, qty:1, unit:exGstAmount, amount:exGstAmount}],
     status:'invoiced', createdAt:date, invoiceDate:date, invoiceDue:dueDate,
     scheduledDate:date, poNumber:po, notes:'Quick invoice',
     activityLog:[{ts:today()+' (quick)',msg:'Invoice created via Quick Invoice'}],
@@ -10710,7 +10720,7 @@ function _qiCreate(printAfter){
   jobs.push(newJob);
   save();
   closeModal();
-  showToast('Invoice ' + invNum + ' created — ' + fmt$(amount), 'success');
+  showToast('Invoice ' + invNum + ' created — ' + fmt$(incGstTotal), 'success');
   if(printAfter) setTimeout(()=>printInvoiceDoc(newJob.id), 300);
   else openJobDetail(newJob.id);
 }
@@ -19654,16 +19664,20 @@ function openInvoiceLineEditor(jobId){
 
         <!-- SECTION 4: Line Items -->
         <div style="background:#f4f7fb;border-radius:12px;padding:18px;margin-bottom:18px;border:1.5px solid #dde3ec">
-          <div style="font-size:11px;font-weight:800;color:#0e1f3d;text-transform:uppercase;letter-spacing:1px;margin-bottom:14px;display:flex;align-items:center;gap:6px">
+          <div style="font-size:11px;font-weight:800;color:#0e1f3d;text-transform:uppercase;letter-spacing:1px;margin-bottom:8px;display:flex;align-items:center;gap:6px">
             <span style="width:20px;height:20px;background:#0e1f3d;border-radius:50%;color:#fff;display:inline-flex;align-items:center;justify-content:center;font-size:10px;font-weight:900">4</span>
             Line Items
+          </div>
+          <div style="font-size:12px;color:#1e3a5f;background:#e0f2fe;border:1px solid #bae6fd;border-radius:8px;padding:8px 12px;margin-bottom:12px;display:flex;align-items:center;gap:8px">
+            <span>💡</span>
+            <div><strong>Enter item rates ex-GST</strong>. 10% GST is calculated and added automatically to the invoice total below.</div>
           </div>
           <table style="width:100%;border-collapse:collapse;margin-bottom:10px">
             <thead><tr style="background:#0e1f3d">
               <th style="padding:9px 8px;font-size:10px;font-weight:800;color:#fff;text-transform:uppercase;letter-spacing:0.8px;text-align:left">Description</th>
               <th style="padding:9px 8px;font-size:10px;font-weight:800;color:#fff;text-transform:uppercase;letter-spacing:0.8px;text-align:center;width:70px">Qty</th>
-              <th style="padding:9px 8px;font-size:10px;font-weight:800;color:#fff;text-transform:uppercase;letter-spacing:0.8px;text-align:right;width:110px">Unit $</th>
-              <th style="padding:9px 8px;font-size:10px;font-weight:800;color:#f07020;text-transform:uppercase;letter-spacing:0.8px;text-align:right;width:110px">Total</th>
+              <th style="padding:9px 8px;font-size:10px;font-weight:800;color:#fff;text-transform:uppercase;letter-spacing:0.8px;text-align:right;width:125px">Unit $ (ex GST)</th>
+              <th style="padding:9px 8px;font-size:10px;font-weight:800;color:#f07020;text-transform:uppercase;letter-spacing:0.8px;text-align:right;width:115px">Total (ex GST)</th>
               <th style="width:30px"></th>
             </tr></thead>
             <tbody id="il-line-rows">${renderLineRows()}</tbody>
@@ -19681,11 +19695,23 @@ function openInvoiceLineEditor(jobId){
             <button onclick="window._ilAdd('blank')" style="background:#fff;border:1.5px dashed #94a3b8;border-radius:7px;padding:7px 12px;font-size:12px;font-weight:600;cursor:pointer;color:#64748b">+ Custom line</button>
             <button onclick="window._ilClearAll()" style="background:#fee2e2;border:1.5px solid #fca5a5;border-radius:7px;padding:7px 12px;font-size:12px;font-weight:700;cursor:pointer;color:#dc2626;margin-left:auto">✕ Clear all lines</button>
           </div>
-          <div style="text-align:right;font-size:17px;font-weight:900;color:#0e1f3d;padding:12px 16px;background:#0e1f3d;border-radius:8px;color:#fff;display:flex;justify-content:space-between;align-items:center">
-            <span style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:rgba(255,255,255,0.7)">Invoice Total</span>
-            <span style="color:#f07020">$<span id="il-total">${invLineTotalInc(j, lineTotal).toFixed(2)}</span></span>
+          
+          <!-- Financial Totals Box with GST Breakdown -->
+          <div style="background:#0e1f3d;border-radius:10px;padding:14px 18px;color:#fff;display:flex;flex-direction:column;gap:6px">
+            <div style="display:flex;justify-content:space-between;font-size:12px;color:rgba(255,255,255,0.75)">
+              <span>Subtotal (ex GST)</span>
+              <span>$<span id="il-subtotal">${lineTotal.toFixed(2)}</span></span>
+            </div>
+            <div style="display:flex;justify-content:space-between;font-size:12px;color:rgba(255,255,255,0.75)">
+              <span>GST (10%)</span>
+              <span>$<span id="il-gst">${((CFG.gstRegistered !== false ? lineTotal * (Number(CFG.gst)||0.1) : 0)).toFixed(2)}</span></span>
+            </div>
+            <div style="display:flex;justify-content:space-between;font-size:16px;font-weight:800;border-top:1px solid rgba(255,255,255,0.15);padding-top:8px;margin-top:2px">
+              <span style="color:#fff">Invoice Total (incl. GST)</span>
+              <span style="color:#f07020">$<span id="il-total">${((CFG.gstRegistered !== false ? lineTotal * (1 + (Number(CFG.gst)||0.1)) : lineTotal)).toFixed(2)}</span></span>
+            </div>
           </div>
-          <div id="il-card-total">${CFG.stripePaymentLinkBase ? stripeCardSummaryHtml(lineTotalInc, true) : ''}</div>
+          <div id="il-card-total">${CFG.stripePaymentLinkBase ? stripeCardSummaryHtml(lineTotal * (1 + (Number(CFG.gst)||0.1)), true) : ''}</div>
         </div>
 
         <!-- SECTION 5: Payment Details (from Settings) -->
@@ -19788,13 +19814,22 @@ function openInvoiceLineEditor(jobId){
     if(!ln) return;
     ln[field] = val;
     if(field==='qty'||field==='unit'){
-      ln.amount = ln.qty * ln.unit;
+      ln.amount = (Number(ln.qty)||0) * (Number(ln.unit)||0);
       const rowEl = document.getElementById('ilrow_'+id);
       if(rowEl){
         const cells = rowEl.querySelectorAll('td');
-        if(cells[3]) cells[3].textContent = '$'+(ln.qty*ln.unit).toFixed(2);
+        if(cells[3]) cells[3].textContent = '$'+ln.amount.toFixed(2);
       }
-      const currentTotal = invLineTotalInc(j, j.invoiceLines.reduce((s,l)=>s+(l.qty*l.unit),0));
+      const currentEx = j.invoiceLines.reduce((s,l)=>s+((Number(l.qty)||0)*(Number(l.unit)||0)),0);
+      const gstRate = (typeof CFG !== 'undefined') ? (Number(CFG.gst) || 0.1) : 0.1;
+      const gstOn = (typeof CFG === 'undefined') || CFG.gstRegistered !== false;
+      const currentGst = gstOn ? currentEx * gstRate : 0;
+      const currentTotal = gstOn ? currentEx * (1 + gstRate) : currentEx;
+
+      const subEl = document.getElementById('il-subtotal');
+      if(subEl) subEl.textContent = currentEx.toFixed(2);
+      const gstEl = document.getElementById('il-gst');
+      if(gstEl) gstEl.textContent = currentGst.toFixed(2);
       const totalEl = document.getElementById('il-total');
       if(totalEl) totalEl.textContent = currentTotal.toFixed(2);
       const cardEl = document.getElementById('il-card-total');
