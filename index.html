@@ -2951,10 +2951,7 @@ function renderDashboard(){
     return age > validDays;
   });
 
-  // Escalation tiers for overdue invoices
-  const escTier1 = overdueList.filter(j=>{ const d=Math.floor((new Date()-new Date(j.invoiceDue+'T00:00:00'))/(86400000)); return d>=3&&d<14; });
-  const escTier2 = overdueList.filter(j=>{ const d=Math.floor((new Date()-new Date(j.invoiceDue+'T00:00:00'))/(86400000)); return d>=14&&d<30; });
-  const escTier3 = overdueList.filter(j=>{ const d=Math.floor((new Date()-new Date(j.invoiceDue+'T00:00:00'))/(86400000)); return d>=30; });
+
 
   return `<div style="padding:32px">
 
@@ -3008,40 +3005,7 @@ function renderDashboard(){
       </div>
     </div>
 
-    <!-- OVERDUE ESCALATION BANNERS -->
-    ${escTier3.length ? `
-    <div style="background:#fef2f2;border:2px solid #fca5a5;border-radius:12px;padding:14px 20px;margin-bottom:12px;display:flex;align-items:center;gap:14px">
-      <span style="font-size:22px">🚨</span>
-      <div style="flex:1">
-        <div style="font-size:14px;font-weight:800;color:#991b1b">FINAL NOTICE — ${escTier3.length} invoice${escTier3.length>1?'s':''} 30+ days overdue — consider debt collection</div>
-        <div style="font-size:12px;color:#b91c1c;margin-top:2px">${escTier3.map(j=>{const c=gc(j.clientId);return (c?.company||j.jobNumber)+' · '+fmt$(jobOutstanding(j))+' · '+Math.floor((new Date()-new Date(j.invoiceDue+'T00:00:00'))/86400000)+'d overdue';}).join(' &nbsp;|&nbsp; ')}</div>
-      </div>
-      <div style="display:flex;gap:8px;flex-shrink:0">
-        ${escTier3.map(j=>`<button onclick="openChaseComms('${j.id}',3)" style="background:#dc2626;color:#fff;border:none;border-radius:7px;padding:7px 12px;font-size:12px;font-weight:700;cursor:pointer">Final Notice →</button>${CFG.stripePaymentLinkBase?`<button onclick="openStripePaymentLink('${j.id}')" title="Open Stripe pay link for this invoice" style="background:#635bff;color:#fff;border:none;border-radius:7px;padding:7px 12px;font-size:12px;font-weight:700;cursor:pointer">💳 Pay Now</button>`:''}`).join('')}
-      </div>
-    </div>` : ''}
-    ${escTier2.length ? `
-    <div style="background:#fff7ed;border:2px solid #fed7aa;border-radius:12px;padding:14px 20px;margin-bottom:12px;display:flex;align-items:center;gap:14px">
-      <span style="font-size:22px">⚠️</span>
-      <div style="flex:1">
-        <div style="font-size:14px;font-weight:800;color:#c2410c">${escTier2.length} invoice${escTier2.length>1?'s':''} 14–30 days overdue — send formal notice now</div>
-        <div style="font-size:12px;color:#ea580c;margin-top:2px">${escTier2.map(j=>{const c=gc(j.clientId);return (c?.company||j.jobNumber)+' · '+fmt$(jobOutstanding(j));}).join(' &nbsp;|&nbsp; ')}</div>
-      </div>
-      <div style="display:flex;gap:8px;flex-shrink:0">
-        ${escTier2.map(j=>`<button onclick="openChaseComms('${j.id}',2)" style="background:#f97316;color:#fff;border:none;border-radius:7px;padding:7px 12px;font-size:12px;font-weight:700;cursor:pointer">Send Notice →</button>${CFG.stripePaymentLinkBase?`<button onclick="openStripePaymentLink('${j.id}')" title="Open Stripe pay link" style="background:#635bff;color:#fff;border:none;border-radius:7px;padding:7px 12px;font-size:12px;font-weight:700;cursor:pointer">💳 Pay Now</button>`:''}`).join('')}
-      </div>
-    </div>` : ''}
-    ${escTier1.length ? `
-    <div style="background:#fffbeb;border:2px solid #fde68a;border-radius:12px;padding:14px 20px;margin-bottom:12px;display:flex;align-items:center;gap:14px">
-      <span style="font-size:22px">📬</span>
-      <div style="flex:1">
-        <div style="font-size:14px;font-weight:800;color:#92400e">${escTier1.length} invoice${escTier1.length>1?'s':''} 3–14 days overdue — send a friendly reminder</div>
-        <div style="font-size:12px;color:#b45309;margin-top:2px">${escTier1.map(j=>{const c=gc(j.clientId);return (c?.company||j.jobNumber)+' · '+fmt$(jobOutstanding(j));}).join(' &nbsp;|&nbsp; ')}</div>
-      </div>
-      <div style="display:flex;gap:8px;flex-shrink:0">
-        ${escTier1.map(j=>`<button onclick="openChaseComms('${j.id}',1)" style="background:#f59e0b;color:#fff;border:none;border-radius:7px;padding:7px 12px;font-size:12px;font-weight:700;cursor:pointer">Send Reminder →</button>${CFG.stripePaymentLinkBase?`<button onclick="openStripePaymentLink('${j.id}')" title="Open Stripe pay link" style="background:#635bff;color:#fff;border:none;border-radius:7px;padding:7px 12px;font-size:12px;font-weight:700;cursor:pointer">💳 Pay Now</button>`:''}`).join('')}
-      </div>
-    </div>` : ''}
+
     ${(()=>{
       const activeP=projects.filter(p=>!['complete','cancelled'].includes(p.status));
       if(activeP.length===0) return '';
@@ -21723,34 +21687,8 @@ function deleteTimesheet(i){
 
 // ─── STARTUP ALERTS ───────────────────────────────────────────────────────────
 function showStartupAlerts(){
-  const today_str = today();
-  const overdue = jobs.filter(j=>['invoiced','overdue'].includes(j.status)&&j.invoiceDue&&j.invoiceDue<today_str&&jobOutstanding(j)>0);
-  const balanceDue = getBalanceDueJobs();
-  const dueRecurring = recurringJobs.filter(r=>r.active&&r.nextDue&&r.nextDue<=today_str);
-  const dueSoon = recurringJobs.filter(r=>{
-    if(!r.active||!r.nextDue||r.nextDue<=today_str) return false;
-    const daysUntil = (new Date(r.nextDue)-new Date())/(86400000);
-    return daysUntil<=7;
-  });
-
-  if(!overdue.length && !dueRecurring.length && !dueSoon.length && !balanceDue.length) return;
-
-  let msgs = [];
-  if(balanceDue.length){
-    const bdTotal = balanceDue.reduce((s,j)=>s+(calcBalanceRemaining(j)?.balance||0),0);
-    msgs.push(`💰 ${balanceDue.length} job${balanceDue.length>1?'s':''} with balance remaining — ${fmt$(bdTotal)} due on completion`);
-  }
-  if(overdue.length) msgs.push(`⚠️ ${overdue.length} overdue invoice${overdue.length>1?'s':''} — total ${fmt$(overdue.reduce((s,j)=>s+jobOutstanding(j),0))}`);
-  if(dueRecurring.length) msgs.push(`↺ ${dueRecurring.length} recurring job${dueRecurring.length>1?'s':''} due now`);
-  if(dueSoon.length) msgs.push(`📅 ${dueSoon.length} recurring job${dueSoon.length>1?'s':''} due within 7 days`);
-
-  const banner = document.createElement('div');
-  banner.style = 'position:fixed;top:0;left:0;right:0;z-index:99998;background:#1e3a5f;color:#fff;padding:10px 20px;display:flex;align-items:center;gap:16px;font-size:13px;font-weight:600;box-shadow:0 2px 12px rgba(0,0,0,0.3)';
-  banner.innerHTML = `<span style="flex:1">${msgs.join(' &nbsp;·&nbsp; ')}</span>
-    ${overdue.length?`<button onclick="goto('invoices');this.closest('div').remove()" style="background:#ef4444;border:none;border-radius:6px;color:#fff;padding:5px 12px;font-size:12px;font-weight:700;cursor:pointer">Chase Invoices</button>`:''}
-    ${dueRecurring.length?`<button onclick="goto('recurring');this.closest('div').remove()" style="background:#f59e0b;border:none;border-radius:6px;color:#fff;padding:5px 12px;font-size:12px;font-weight:700;cursor:pointer">View Recurring</button>`:''}
-    <button onclick="this.closest('div').remove()" style="background:rgba(255,255,255,0.15);border:none;border-radius:6px;color:#fff;padding:5px 10px;font-size:13px;cursor:pointer">✕</button>`;
-  document.body.prepend(banner);
+  // Disabled per user preference
+  return;
 }
 
 // ─── DATA BACKUP & RESTORE ────────────────────────────────────────────────────
@@ -21846,8 +21784,7 @@ This will REPLACE all current data.`)) return;
   input.click();
 }
 
-// Run startup alerts after a short delay
-setTimeout(showStartupAlerts, 1200);
+
 
 // ─── DEPOSIT BALANCE FLAG ─────────────────────────────────────────────────────
 // Statuses where a deposit may have been taken but final invoice not yet raised
