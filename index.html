@@ -5088,17 +5088,26 @@ function renderNewJob(){
     ${field('Scope of Works',`<textarea id="f-scope" rows="3" style="${inputStyle};resize:vertical">${esc(_pf.scope||'')}</textarea>`,true)}
     <button onclick="(async()=>{const scope=document.getElementById('f-scope').value.trim();const client=document.getElementById('f-client');const clientName=client.options[client.selectedIndex]?.text||'client';const q='For a lighting control service call for '+clientName+', scope: \\\"'+(scope||'general service call')+'\\\". List 5 typical scope additions I should charge for. Be specific, include $ ranges for Australian commercial market.';aiAsk(q);})()" style="background:#f0f0ff;border:1px solid #c7d2fe;border-radius:7px;color:#4338ca;padding:7px 12px;font-size:12px;font-weight:700;cursor:pointer;margin-bottom:4px;width:100%">✦ AI: What else should I charge for?</button>
     ${field('Internal Notes',ta('f-notes','Access, parking, contacts...'))}
-    ${field('How did they find us?',`<select id="f-leadSource" style="${inputStyle};appearance:none;cursor:pointer">
+    ${field('How did they find us?',`<select id="f-leadSource" required style="${inputStyle};appearance:none;cursor:pointer">
       <option value="">— Select source —</option>
-      <option value="Repeat Client">Repeat Client</option>
-      <option value="Referral — Client">Referral — Client</option>
-      <option value="Referral — Builder/Trade">Referral — Builder/Trade</option>
-      <option value="Google Search">Google Search</option>
-      <option value="Google Maps">Google Maps</option>
-      <option value="Website Enquiry"${_pf.leadName?' selected':''}>Website Enquiry</option>
-      <option value="Word of Mouth">Word of Mouth</option>
-      <option value="Returning after quote">Returning after quote</option>
-      <option value="Other">Other</option>
+      <optgroup label="Website sources">
+        <option value="Website — Phone">Website — Phone</option>
+        <option value="Website — WhatsApp">Website — WhatsApp</option>
+        <option value="Website — Email">Website — Email</option>
+        <option value="Website — Calendly">Website — Calendly</option>
+        <option value="Website — Formspree">Website — Formspree</option>
+        <option value="Website Enquiry"${_pf.leadName?' selected':''}>Website Enquiry (legacy)</option>
+      </optgroup>
+      <optgroup label="Other sources">
+        <option value="Google Search">Google Search</option>
+        <option value="Google Maps">Google Maps</option>
+        <option value="Referral — Client">Referral — Client</option>
+        <option value="Referral — Builder/Trade">Referral — Builder/Trade</option>
+        <option value="Repeat Client">Repeat Client</option>
+        <option value="Word of Mouth">Word of Mouth</option>
+        <option value="Returning after quote">Returning after quote</option>
+        <option value="Other">Other</option>
+      </optgroup>
     </select>`,'',false)}
     <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:8px">
       <button onclick="closeModal()" style="padding:10px 20px;border:1px solid #e2e8f0;border-radius:8px;background:#fff;font-size:14px">Cancel</button>
