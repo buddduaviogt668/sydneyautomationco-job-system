@@ -1,8 +1,8 @@
 const fs = require('fs');
 const path = require('path');
 
-const FILE_TO_AUDIT = path.join('C:', 'Users', 'gaska', 'SydneyAutomation_Data_20260526 (10).json');
-const TODAY = new Date('2026-05-28');
+const FILE_TO_AUDIT = process.argv[2] || path.join(__dirname, 'SydneyAutomation_Data_20260528 (4).json');
+const TODAY = new Date(process.env.AUDIT_TODAY || new Date());
 
 function audit() {
     console.log(`\n================================================================`);

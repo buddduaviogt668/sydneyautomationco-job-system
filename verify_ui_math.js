@@ -1,7 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 
-const FILE = path.join('C:', 'Users', 'gaska', 'SydneyAutomation_Data_20260526 (10).json');
+const FILE = process.argv[2] || path.join(__dirname, 'SydneyAutomation_Data_20260528 (4).json');
 const data = JSON.parse(fs.readFileSync(FILE, 'utf8'));
 
 function jobRevenue(j) {

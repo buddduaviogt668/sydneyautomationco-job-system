@@ -10812,28 +10812,58 @@ function renderIncomeTracker(){
   </div>`;
 }
 
-// ─── AGED DEBTORS ────────────────────────────────────────────────────────────
-function renderAgedDebtors(){
-  const overdue = jobs.filter(j=>['invoiced','overdue'].includes(j.status) && jobOutstanding(j) > 0);
-  if(overdue.length===0) return '';
+// ─── FIRST-CLASS DEBTOR DISPLAY ENTRIES ───────────────────────────────────────
+// A job can have an unpaid deposit and a separate unpaid balance invoice.
+// Keep the job total unchanged, but expose the two receivable components in
+// debtor views so collection and payment allocation are unambiguous.
+function getDebtorEntries(){
+  const out=[];
+  (jobs||[]).filter(j=>['invoiced','overdue'].includes(j.status)).forEach(j=>{
+    const dep=Math.max(0,Number(j.depositAmount)||0);
+    const bal=Math.max(0,Number(j.invoiceAmount)>0 ? jobAmountDisplay(j) : 0);
+    const depPaid=depositIsPaid(j);
+    const jobPaid=j.status==='paid';
+    const client=gc(j.clientId);
+    if(dep>0 && !depPaid && !jobPaid){
+      out.push({j,client,kind:'deposit',number:j.depositInvoiceNumber||('DEP — '+(j.invoiceNumber||j.jobNumber)),amount:dep,due:j.depositInvoiceDue||j.depositDue||j.invoiceDue||'',label:'Deposit'});
+    }
+    if(bal>0 && !jobPaid){
+      out.push({j,client,kind:'balance',number:j.invoiceNumber||j.jobNumber,amount:bal,due:j.invoiceDue||'',label:dep>0?'Balance':'Invoice'});
+    }
+    if(dep<=0 && bal<=0){
+      const fallback=Math.max(0,jobOutstanding(j));
+      if(fallback>0) out.push({j,client,kind:'invoice',number:j.invoiceNumber||j.jobNumber,amount:fallback,due:j.invoiceDue||'',label:'Invoice'});
+    }
+  });
+  return out;
+}
+function debtorDays(entry){
+  return entry.due ? Math.floor((new Date()-new Date(entry.due+'T00:00:00'))/86400000) : 0;
+}
+function debtorBucket(entry){
+  const days=debtorDays(entry);
+  if(days<=0) return 'current';
+  if(days<=30) return '1-30';
+  if(days<=60) return '31-60';
+  if(days<=90) return '61-90';
+  return '90+';
+}
 
-  const bucket = (j) => {
-    if(!j.invoiceDue) return 'current';
-    const days = Math.floor((new Date()-new Date(j.invoiceDue+'T00:00:00'))/86400000);
-    if(days<=0) return 'current';
-    if(days<=30) return '1-30';
-    if(days<=60) return '31-60';
-    if(days<=90) return '61-90';
-    return '90+';
-  };
+function renderAgedDebtors(){
+  const entries = getDebtorEntries();
+  if(entries.length===0) return '';
+
+
+
+  const bucket = debtorBucket;
 
   const buckets = {'current':[],'1-30':[],'31-60':[],'61-90':[],'90+':[]};
-  overdue.forEach(j=>buckets[bucket(j)].push(j));
+  entries.forEach(e=>buckets[bucket(e)].push(e));
 
   const bColors = {'current':'#10b981','1-30':'#f59e0b','31-60':'#f97316','61-90':'#ef4444','90+':'#7f1d1d'};
   const bLabels = {'current':'Current','1-30':'1–30 days','31-60':'31–60 days','61-90':'61–90 days','90+':'90+ days'};
 
-  const total = overdue.reduce((s,j)=>s+jobOutstanding(j),0);
+  const total = entries.reduce((s,e)=>s+e.amount,0);
 
   return `<div style="background:#fff;border:1px solid #e2e8f0;border-radius:12px;overflow:hidden;margin-bottom:16px">
     <div style="background:#7f1d1d;padding:12px 18px;display:flex;justify-content:space-between;align-items:center">
@@ -10842,28 +10872,24 @@ function renderAgedDebtors(){
     </div>
     <div style="display:grid;grid-template-columns:repeat(5,1fr);border-bottom:1px solid #f1f5f9">
       ${Object.entries(buckets).map(([key,arr])=>{
-        const val=arr.reduce((s,j)=>s+jobOutstanding(j),0);
+        const val=arr.reduce((s,e)=>s+e.amount,0);
         return `<div style="padding:12px 14px;border-right:1px solid #f1f5f9;text-align:center">
           <div style="font-size:10px;font-weight:700;color:${bColors[key]};text-transform:uppercase;margin-bottom:4px">${bLabels[key]}</div>
           <div style="font-size:16px;font-weight:800;color:${val>0?bColors[key]:'#94a3b8'}">${fmt$(val)}</div>
-          <div style="font-size:10px;color:#94a3b8">${arr.length} invoice${arr.length!==1?'s':''}</div>
+          <div style="font-size:10px;color:#94a3b8">${arr.length} item${arr.length!==1?'s':''}</div>
         </div>`;
       }).join('')}
     </div>
     <div style="max-height:220px;overflow-y:auto">
-      ${overdue.sort((a,b)=>(a.invoiceDue||'')>(b.invoiceDue||'')?1:-1).map(j=>{
-        const c=gc(j.clientId);
-        const days=j.invoiceDue?Math.floor((new Date()-new Date(j.invoiceDue+'T00:00:00'))/86400000):0;
-        const bk=bucket(j);
+      ${entries.sort((a,b)=>(a.due||'')>(b.due||'')?1:-1).map(e=>{
+        const j=e.j, c=e.client, days=debtorDays(e), bk=bucket(e);
         return `<div style="display:flex;align-items:center;gap:12px;padding:9px 16px;border-bottom:1px solid #f8fafc" onmouseover="this.style.background='#f8fafc'" onmouseout="this.style.background='transparent'">
           <span style="background:${bColors[bk]};color:#fff;border-radius:4px;padding:2px 7px;font-size:10px;font-weight:700;min-width:60px;text-align:center">${days>0?days+'d overdue':'Current'}</span>
           <div style="flex:1;min-width:0">
             <div style="font-size:13px;font-weight:600;color:#0f172a">${esc(c?.company||'—')}</div>
-            <div style="font-size:11px;color:#94a3b8">${j.invoiceNumber||j.jobNumber} · Due: ${fmtD(j.invoiceDue)||'not set'}</div>
+            <div style="font-size:11px;color:#94a3b8">${esc(e.number)} · ${e.label} · Due: ${fmtD(e.due)||'not set'}</div>
           </div>
-          <div style="text-align:right">
-            <div style="font-size:14px;font-weight:800;color:${bColors[bk]}">${fmt$(jobOutstanding(j))}</div>
-          </div>
+          <div style="text-align:right"><div style="font-size:14px;font-weight:800;color:${bColors[bk]}">${fmt$(e.amount)}</div></div>
           <div style="display:flex;gap:5px">
             <button onclick="sendWhatsApp('${j.id}','chase')" style="background:#25D366;color:#fff;border:none;border-radius:5px;padding:5px 8px;font-size:11px;font-weight:700;cursor:pointer" title="Chase via WhatsApp">💬</button>
             ${CFG.stripePaymentLinkBase?`<button onclick="openStripePaymentLink('${j.id}')" style="background:#635bff;color:#fff;border:none;border-radius:5px;padding:5px 8px;font-size:11px;font-weight:700;cursor:pointer" title="Open Stripe pay link">💳</button>`:''}
@@ -10876,8 +10902,8 @@ function renderAgedDebtors(){
 }
 
 function printAgedDebtors(){
-  const overdue = jobs.filter(j=>['invoiced','overdue'].includes(j.status) && jobOutstanding(j) > 0);
-  const total = overdue.reduce((s,j)=>s+jobOutstanding(j),0);
+  const entries = getDebtorEntries();
+  const total = entries.reduce((s,e)=>s+e.amount,0);
   const w = window.open('','_blank');
   if(!w) return;
   w.document.write(`<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Aged Debtors Report</title>
@@ -10889,18 +10915,17 @@ function printAgedDebtors(){
   <div style="background:#7f1d1d;color:#fff;padding:20px 24px;border-radius:10px;margin-bottom:24px;display:flex;justify-content:space-between;align-items:center">
     <div><div style="font-size:22px;font-weight:900;font-family:'Barlow Condensed',sans-serif">AGED DEBTORS REPORT</div>
     <div style="font-size:13px;opacity:0.8;margin-top:4px">${CFG.bizName||''} · Generated ${new Date().toLocaleDateString('en-AU',{day:'2-digit',month:'long',year:'numeric'})}</div></div>
-    <div style="text-align:right"><div style="font-size:28px;font-weight:900">${fmt$(total)}</div><div style="font-size:12px;opacity:0.8">${overdue.length} invoices outstanding</div></div>
+    <div style="text-align:right"><div style="font-size:28px;font-weight:900">${fmt$(total)}</div><div style="font-size:12px;opacity:0.8">${entries.length} items outstanding</div></div>
   </div>
   <table><thead><tr><th>Client</th><th>Invoice #</th><th>Due Date</th><th>Days Overdue</th><th style="text-align:right">Amount</th><th>Status</th></tr></thead><tbody>
-  ${overdue.sort((a,b)=>(a.invoiceDue||'')>(b.invoiceDue||'')?1:-1).map(j=>{
-    const c=gc(j.clientId);
-    const days=j.invoiceDue?Math.floor((new Date()-new Date(j.invoiceDue+'T00:00:00'))/86400000):0;
+  ${entries.sort((a,b)=>(a.due||'')>(b.due||'')?1:-1).map(e=>{
+    const c=e.client, days=debtorDays(e);
     const col=days>90?'#7f1d1d':days>60?'#991b1b':days>30?'#c2410c':days>0?'#d97706':'#166534';
     return `<tr><td><strong>${esc(c?.company||'—')}</strong>${c?.phone?`<br><span style="font-size:11px;color:#64748b">${esc(c.phone)}</span>`:''}</td>
-    <td style="font-family:monospace;font-size:12px">${esc(j.invoiceNumber||j.jobNumber)}</td>
-    <td>${fmtD(j.invoiceDue)||'—'}</td>
+    <td style="font-family:monospace;font-size:12px">${esc(e.number)} · ${e.label}</td>
+    <td>${fmtD(e.due)||'—'}</td>
     <td><strong style="color:${col}">${days>0?days+' days':'Current'}</strong></td>
-    <td style="text-align:right;font-weight:800;color:${col}">${fmt$(jobOutstanding(j))}</td>
+    <td style="text-align:right;font-weight:800;color:${col}">${fmt$(e.amount)}</td>
     <td><span style="background:${col};color:#fff;border-radius:4px;padding:2px 8px;font-size:11px;font-weight:700">${days>90?'CRITICAL':days>60?'SERIOUS':days>30?'OVERDUE':days>0?'LATE':'CURRENT'}</span></td></tr>`;
   }).join('')}
   </tbody><tfoot><tr style="background:#0f172a"><td colspan="4" style="color:#fff;font-weight:800;padding:12px">TOTAL OUTSTANDING</td><td style="text-align:right;color:#fbbf24;font-size:18px;font-weight:900;padding:12px">${fmt$(total)}</td><td></td></tr></tfoot></table>
