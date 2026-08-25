@@ -8148,7 +8148,7 @@ function renderMonthlyReport(ms, forPrint){
         ${box('Invoiced',fmt$(revInv),invJobsM.length+' invoice'+(invJobsM.length===1?'':'s'),'#3b82f6')}
         ${box('Supplier Costs',fmt$(supTotal),`parts ${fmt$(supParts)} · labour ${fmt$(supLab)}`,'#ef4444')}
         ${box('Est. Take-Home',fmt$(th),'after costs + overheads','#10b981')}
-        ${box('GST Collected',fmt$(gstAmt),gstApplied?'10% of cash received':'not GST registered','#7c3aed')}
+        ${box('GST Collected',fmt$(gstAmt),gstApplied?'GST component of GST-inclusive cash':'not GST registered','#7c3aed')}
         ${box('Outstanding',fmt$(outstandingM),outInvM.length+' unpaid invoice'+(outInvM.length===1?'':'s'),'#6366f1')}
       </div>
       <div style="margin-bottom:20px">
@@ -8268,7 +8268,8 @@ function renderFinancials(){
   // ── BEST CLIENTS (YTD revenue by client) ──
   const clientRevMap={};
   ytdPaidJobs.forEach(j=>{
-    const k=j.clientName||j.clientId||'Unknown';
+    const cl=gc(j.clientId)||{};
+    const k=cl.company||cl.name||j.clientName||j.clientId||'Unknown';
     if(!clientRevMap[k])clientRevMap[k]={name:k,rev:0,jobs:0};
     clientRevMap[k].rev+=jobRevenue(j);
     clientRevMap[k].jobs++;
@@ -8427,23 +8428,13 @@ function renderFinancials(){
       </div>
       <div style="margin-top:12px;background:#f8fafc;border-radius:8px;padding:10px 12px;font-size:11px;color:#475569;line-height:1.6">The safe-draw figure is capped by your ${fmt$(P.drawTarget)}/month owner-drawing target and reduced by estimated GST, recorded expenses, recurring overhead, tax reserve, and optional retirement reserve. Keep the underlying calculation separate from your accountant’s final tax position.</div>
     </div>`})()}
-    <!-- GST THRESHOLD -->
-    <div style="background:#fff;border-radius:12px;border:1px solid #e2e8f0;padding:20px 24px;margin-bottom:20px">
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
-        <div>
-          <div style="font-size:14px;font-weight:700;color:#0f172a">GST Registration Threshold</div>
-          <div style="font-size:12px;color:#64748b;margin-top:2px">Monitor your yearly revenue against the $75,000 ATO threshold</div>
-        </div>
-        <div style="text-align:right">
-          <div style="font-size:22px;font-weight:800;color:${gstColor}">${gstPct}%</div>
-          <div style="font-size:12px;color:#64748b">${fmt$(gstRev)} of $75,000 · last 12 months</div>
-        </div>
+    <!-- GST STATUS -->
+    <div style="background:#fff;border-radius:12px;border:1px solid #bbf7d0;padding:16px 24px;margin-bottom:20px;display:flex;justify-content:space-between;align-items:center;gap:16px;flex-wrap:wrap">
+      <div>
+        <div style="font-size:14px;font-weight:700;color:#0f172a">GST Status</div>
+        <div style="font-size:12px;color:#64748b;margin-top:2px">GST registered · manage BAS and GST obligations from your accounting records</div>
       </div>
-      <div style="background:#f1f5f9;border-radius:6px;height:10px;overflow:hidden">
-        <div style="height:10px;background:${gstColor};border-radius:6px;width:${gstPct}%;transition:width 0.3s"></div>
-      </div>
-      ${gstRev>70000?`<div style="margin-top:8px;padding:12px 16px;background:#fef2f2;border:1px solid #fca5a5;border-radius:6px;font-size:13px;color:#b91c1c;font-weight:800">⚠️ APPROACHING GST THRESHOLD ($75k). Speak to your accountant about registering for GST.</div>`:
-      (gstPct>80?`<div style="margin-top:8px;padding:8px 12px;background:#fff5f5;border-radius:6px;font-size:12px;color:#ef4444;font-weight:600">⚠ Getting close — consider registering for GST before you hit $75k to avoid a penalty.</div>`:'')}
+      <div style="font-size:13px;font-weight:800;color:#047857;background:#ecfdf5;border:1px solid #a7f3d0;border-radius:999px;padding:7px 12px">✓ GST Registered</div>
     </div>
 
     <!-- YEARLY TARGET PROGRESS -->
