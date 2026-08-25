@@ -2786,19 +2786,12 @@ function jobAmountDisplay(j) {
 // Returns the unpaid balance for a job.
 // If it has an invoice amount entered, that is the balance due (GST-inclusive).
 // Otherwise falls back to quote amount minus deposit.
-function depositIsPaid(j){
-  // Explicit status wins; legacy records remain compatible via depositDate.
-  return Number(j.depositAmount)>0 && (j.depositStatus==='paid' || (!j.depositStatus && !!j.depositDate));
-}
-function depositOutstanding(j){
-  return Number(j.depositAmount)>0 && !depositIsPaid(j) ? Number(j.depositAmount) : 0;
-}
 function jobOutstanding(j) {
   const inv = Number(j.invoiceAmount);
-  if (inv > 0) return jobAmountDisplay(j) + depositOutstanding(j);
+  if (inv > 0) return jobAmountDisplay(j);
   const q = Number(j.quoteAmount) || 0;
   const d = Number(j.depositAmount) || 0;
-  return (q - d > 0) ? ((depositIsPaid(j) ? 0 : d) + (q-d)) : (depositIsPaid(j) ? 0 : d);
+  return (q - d > 0) ? (q - d) : 0;
 }
 
 // ─── JOB COST HELPER ─────────────────────────────────────────────────────────
@@ -5516,19 +5509,8 @@ function renderJobDetail(id){
           </select>
         </div>
         <div>
-          <label style="display:block;font-size:11px;font-weight:700;color:#64748b;text-transform:uppercase;margin-bottom:4px">Deposit Status</label>
-          <select id="je-depositstatus" style="${inputStyle};appearance:none;cursor:pointer;font-weight:700">
-            <option value="unpaid"${(j.depositStatus || (j.depositDate?'paid':'unpaid'))==='unpaid'?' selected':''}>Deposit invoiced — unpaid</option>
-            <option value="paid"${(j.depositStatus || (j.depositDate?'paid':'unpaid'))==='paid'?' selected':''}>Deposit received</option>
-          </select>
-        </div>
-        <div>
-          <label style="display:block;font-size:11px;font-weight:700;color:#64748b;text-transform:uppercase;margin-bottom:4px">Deposit Date Received</label>
+          <label style="display:block;font-size:11px;font-weight:700;color:#64748b;text-transform:uppercase;margin-bottom:4px">Deposit Date</label>
           <input id="je-depositdate" type="date" value="${j.depositDate||''}" style="${inputStyle}">
-        </div>
-        <div>
-          <label style="display:block;font-size:11px;font-weight:700;color:#64748b;text-transform:uppercase;margin-bottom:4px">Deposit Invoice Date</label>
-          <input id="je-deposit-invdate" type="date" value="${j.depositInvoiceDate||j.depositHeader?.issueDate||''}" style="${inputStyle}">
         </div>
         <div>
           <label style="display:block;font-size:11px;font-weight:700;color:#64748b;text-transform:uppercase;margin-bottom:4px">Invoice Number</label>
@@ -5680,9 +5662,6 @@ function saveJobEdit(id){
   const _jdpct = document.getElementById('je-depositpct')?.value||'default';
   j.depositPct = _jdpct==='default' ? null : Number(_jdpct);
   j.depositDate   = document.getElementById('je-depositdate')?.value||'';
-  j.depositStatus = document.getElementById('je-depositstatus')?.value || (j.depositDate ? 'paid' : 'unpaid');
-  if(j.depositStatus==='unpaid') j.depositDate='';
-  j.depositInvoiceDate = document.getElementById('je-deposit-invdate')?.value||'';
   j.invoiceNumber = document.getElementById('je-invnum')?.value.trim()||'';
   const jeQuote = Number(document.getElementById('je-quote')?.value||0);
   const jeDep = Number(document.getElementById('je-deposit')?.value||0);
@@ -10753,18 +10732,11 @@ function renderIncomeTracker(){
   const dayOfMonth = now.getDate();
   const pctThrough = Math.round((dayOfMonth/daysInMonth)*100);
 
-  // Revenue invoiced this month. Balance and deposit invoices are separate components
-  // of one job; each is counted only when its own invoice date is recorded.
-  const mthInvoiced = jobs.reduce((sum,j)=>{
-    if(j.type!=='SAI') return sum;
-    const invDate = j.invoiceDate || j.createdAt || '';
-    const balance = (invDate>=mStart && invDate<=mEnd)
-      ? (Number(j.invoiceAmount)||Number(j.amountDue)||Number(j.quoteAmount)||0) : 0;
-    const depDate = j.depositInvoiceDate || '';
-    const deposit = (depDate>=mStart && depDate<=mEnd && Number(j.depositAmount)>0)
-      ? Number(j.depositAmount) : 0;
-    return sum + balance + deposit;
-  },0);
+  // Revenue invoiced this month — uses invoiceAmount (not jobRevenue, which only counts paid)
+  // SAI jobs with an invoiceDate in this month → sum their invoiceAmount (or quoteAmount if no invoice yet)
+  const mthInvoiced = jobs
+    .filter(j=>j.type==='SAI' && (j.invoiceDate||j.createdAt||'')>=mStart && (j.invoiceDate||j.createdAt||'')<=mEnd)
+    .reduce((s,j)=>s + (Number(j.invoiceAmount)||Number(j.amountDue)||Number(j.quoteAmount)||0), 0);
 
   const targets = [
     {label:'Minimum', val:(Number(CFG.incomeMin)||0)/12, color:'#ef4444'},
@@ -19939,7 +19911,7 @@ function generateInvoicePDF(jobId, mode){
   const resolvedTermDays = (f.payTermsDays !== undefined && f.payTermsDays !== null) ? f.payTermsDays : payTermsDays(B.invoicePaymentTerms||B.bizPaymentTerms,7);
   const resolvedTermsLabel = _hEom ? '30 days end of month' : (resolvedTermDays === 0 ? 'Due on Invoice' : resolvedTermDays + ' days');
   const _termsDefault = (_hEom ? 'Payment due by the end of the month following the invoice date.' : (resolvedTermDays===0 ? 'Payment due on invoice date.' : 'Payment is due within '+resolvedTermsLabel+' of invoice date.')) + ' This business is registered for GST. This is a tax invoice for GST purposes.';
-  const isPaid = isDeposit ? depositIsPaid(j) : j.status==='paid';
+  const isPaid = isDeposit ? (Number(j.depositAmount)>0 && !!j.depositDate) : j.status==='paid';
   const depAmt = isDeposit ? (Number(dh.depositAmount)||depositAmountFor(j)) : 0;
   let invAmt = isDeposit ? depAmt : Number(j.invoiceAmount||j.quoteAmount||0);
   if(!isDeposit && invAmt > 0){
@@ -23061,7 +23033,6 @@ function sendDepositInvoiceEmail(jobId){
 
   const depAmt = depositAmountFor(j);
   if(!(depAmt>0)){ showToast('No deposit amount set for this job','warn'); return; }
-  if(!j.depositInvoiceDate) j.depositInvoiceDate = (j.depositHeader && j.depositHeader.issueDate) || today();
   const total = Number(j.quoteAmount||0);
   const bal = Math.max(0, total-depAmt);
   const gstR = Number(CFG.gst)||0.1;
