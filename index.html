@@ -2934,7 +2934,48 @@ function renderMain(){
   else if(currentScreen==='settings'){ el.innerHTML = renderSettings(); setTimeout(updateAutoSaveStatus, 50); }
 }
 
-// ─── DASHBOARD ───────────────────────────────────────────────────────────────
+// ─── NEXT-ACTION QUEUE ─────────────────────────────────────────────────────────
+// Generate one actionable item per risk so the operator can work from a single
+// daily queue instead of searching across separate screens.
+function getNextActionItems(){
+  const items=[];
+  const todayStr=today();
+  const add=(priority,title,detail,job,action)=>items.push({priority,title,detail,job,action});
+  getDebtorEntries().filter(e=>e.due && e.due<todayStr).sort((a,b)=>b.amount-a.amount).slice(0,8).forEach(e=>{
+    add('urgent','Collect overdue '+e.label,`${e.number} · ${fmt$(e.amount)} · due ${fmtD(e.due)}`,e.j,`openJobDetail('${e.j.id}')`);
+  });
+  jobs.filter(j=>['quoted','lead'].includes(j.status)).forEach(j=>{
+    const age=j.createdAt?Math.floor((new Date()-new Date(j.createdAt+'T00:00:00'))/86400000):0;
+    if(age>(CFG.quoteValidDays||30)) add('high','Follow up expired quote',`${j.jobNumber} · ${fmt$(Number(j.quoteAmount)||0)} · ${age} days old`,j,`openJobDetail('${j.id}')`);
+  });
+  jobs.filter(j=>['invoiced','overdue'].includes(j.status) && Number(j.invoiceAmount)>0 && !j.invoiceDue).slice(0,5).forEach(j=>{
+    add('high','Set missing due date',`${j.invoiceNumber||j.jobNumber} · ${fmt$(jobAmountDisplay(j))}`,j,`openJobDetail('${j.id}')`);
+  });
+  jobs.filter(j=>['scheduled','completed','work_order'].includes(j.status) && !j.invoiceNumber && !j.balanceInvoiceRaisedAt).slice(0,5).forEach(j=>{
+    add('high','Review job for invoicing',`${j.jobNumber} · ${fmt$(Number(j.quoteAmount)||0)}`,j,`openJobDetail('${j.id}')`);
+  });
+  jobs.filter(j=>j.scheduledDate && j.scheduledDate>=todayStr && !['paid','lost'].includes(j.status)).sort((a,b)=>a.scheduledDate.localeCompare(b.scheduledDate)).slice(0,4).forEach(j=>{
+    add('normal','Prepare upcoming job',`${j.jobNumber} · ${fmtD(j.scheduledDate)}`,j,`openJobDetail('${j.id}')`);
+  });
+  const rank={urgent:0,high:1,normal:2};
+  return items.sort((a,b)=>rank[a.priority]-rank[b.priority]).slice(0,10);
+}
+function renderNextActionQueue(){
+  const items=getNextActionItems();
+  if(!items.length) return `<div style="background:#ecfdf5;border:1px solid #a7f3d0;border-radius:12px;padding:14px 18px;margin-bottom:16px;color:#065f46;font-weight:700">✓ No urgent next actions — your workflow is clear.</div>`;
+  const colors={urgent:'#dc2626',high:'#f59e0b',normal:'#2563eb'};
+  return `<div style="background:#fff;border:1px solid #e2e8f0;border-radius:12px;overflow:hidden;margin-bottom:16px">
+    <div style="background:#0f172a;padding:12px 18px;display:flex;align-items:center;justify-content:space-between">
+      <div style="font-size:13px;font-weight:800;color:#fff">🎯 Next Actions — ${items.length} items</div>
+      <span style="font-size:11px;color:#94a3b8">Work from the top</span>
+    </div>
+    <div>${items.map((x,i)=>`<div style="display:flex;align-items:center;gap:10px;padding:10px 16px;border-bottom:1px solid #f8fafc">
+      <span style="width:8px;height:8px;border-radius:50%;background:${colors[x.priority]};flex-shrink:0"></span>
+      <div style="flex:1;min-width:0"><div style="font-size:12px;font-weight:800;color:#0f172a">${i+1}. ${esc(x.title)}</div><div style="font-size:11px;color:#64748b;margin-top:2px">${esc(x.detail)}</div></div>
+      <button onclick="${x.action}" style="background:#f1f5f9;border:1px solid #e2e8f0;border-radius:6px;padding:5px 9px;font-size:11px;font-weight:700;color:#334155;cursor:pointer">Open →</button>
+    </div>`).join('')}</div>`;
+}
+
 function renderDashboard(){
   const active = jobs.filter(j=>!['paid','lost'].includes(j.status)).length;
   const outstanding = jobs.filter(j=>['invoiced','overdue'].includes(j.status)&&!(j.jobNumber||'').startsWith('SAQ')).reduce((s,j)=>s+jobOutstanding(j),0);
@@ -2997,6 +3038,8 @@ function renderDashboard(){
       ${(()=>{const bd=getBalanceDueJobs();const bdVal=bd.reduce((s,j)=>s+(calcBalanceRemaining(j)?.balance||0),0);return stat('Balances Due',bd.length?fmt$(bdVal):'—',bd.length+' job'+(bd.length!==1?'s':'')+' with deposit taken','#f59e0b',"goto('jobs')");})()}
       ${stat('Clients',clients.length,'total','#8b5cf6',"goto('clients')")}
     </div>
+
+    ${renderNextActionQueue()}
 
     <!-- AI SMART ALERT BANNER -->
     <div id="ai-smart-alert" style="background:linear-gradient(135deg,#1e1b4b,#312e81);border:1px solid #4f46e5;border-radius:12px;padding:14px 20px;margin-bottom:20px;display:flex;align-items:center;justify-content:space-between;gap:12px">
@@ -12946,8 +12989,27 @@ const WORKFLOW_TRIGGERS = {
 };
 
 // Hook workflow triggers into advanceJob
+function getCloseoutGaps(j){
+  const gaps=[];
+  if(!j.clientId) gaps.push('customer');
+  if(!j.scope && !j.notes) gaps.push('work description');
+  if(!j.scheduledDate) gaps.push('service date');
+  if(!(j.serviceReports||[]).length && !(j.attachments||[]).length) gaps.push('service report or job photos');
+  if(!Number(j.invoiceAmount) && !Number(j.quoteAmount) && !(j.invoiceLines||[]).length) gaps.push('billable amount or invoice lines');
+  return gaps;
+}
 const _origAdvanceJob = advanceJob;
 function advanceJob(id, next){
+  const current=jobs.find(x=>x.id===id);
+  if(current && ['scheduled','work_order','parts_ordered'].includes(current.status) && next==='invoiced'){
+    const gaps=getCloseoutGaps(current);
+    if(gaps.length && !current.closeoutOverrideAt){
+      const ok=confirm('Close-out check: this job is missing '+gaps.join(', ')+'.\\n\\nCancel to complete the missing information, or OK to invoice with an override recorded in the activity log.');
+      if(!ok) return;
+      current.closeoutOverrideAt=today();
+      current.activityLog=(current.activityLog||[]).concat([{ts:new Date().toLocaleString('en-AU'),msg:'Invoice raised with close-out override: missing '+gaps.join(', ')}]);
+    }
+  }
   _origAdvanceJob(id, next);
   // Fire workflow trigger after status change
   setTimeout(()=>{
@@ -22374,7 +22436,7 @@ function renderMobileJobScreen(jobId){
 
     <!-- Tab nav -->
     <div style="display:flex;overflow-x:auto;background:#f8fafc;border-bottom:1px solid #e2e8f0;-webkit-overflow-scrolling:touch;scrollbar-width:none">
-      ${[['details','📋'],['parts','🔧'],['notes','📝'],['photos','📷'],['approval','✍'],['payment','💳']].map(([t,l])=>
+      ${[['details','📋'],['checklist','✅'],['parts','🔧'],['notes','📝'],['photos','📷'],['approval','✍'],['payment','💳']].map(([t,l])=>
         `<button onclick="window._mobileTab='${t}';renderMain()" style="flex-shrink:0;padding:10px 14px;background:${tab===t?'#fff':'transparent'};border:none;border-bottom:${tab===t?'3px solid #1e3a5f':'3px solid transparent'};font-size:18px;font-weight:${tab===t?700:500};color:${tab===t?'#1e3a5f':'#94a3b8'};cursor:pointer;min-width:52px">${l}</button>`
       ).join('')}
     </div>
@@ -22404,10 +22466,30 @@ function renderMobileJobScreen(jobId){
         <div style="font-size:12px;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:8px">Update Status</div>
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:12px">
           ${j.status==='scheduled'?`<button onclick="jobs.find(x=>x.id==='${j.id}').status='work_order';save();renderMain()" style="background:#6366f1;color:#fff;border:none;border-radius:8px;padding:12px;font-size:13px;font-weight:700;cursor:pointer">✓ Start Work</button>`:''}
-          ${['scheduled','work_order'].includes(j.status)?`<button onclick="(function(){const j=jobs.find(x=>x.id==='${jobId}');j.status='invoiced';j.invoiceDate=today();j.invoiceDue=new Date(Date.now()+7*86400000).toISOString().split('T')[0];save();renderMain();})()" style="background:#f97316;color:#fff;border:none;border-radius:8px;padding:12px;font-size:13px;font-weight:700;cursor:pointer">📄 Mark Complete</button>`:''}
+          ${['scheduled','work_order'].includes(j.status)?`<button onclick="advanceJob('${jobId}','invoiced')" style="background:#f97316;color:#fff;border:none;border-radius:8px;padding:12px;font-size:13px;font-weight:700;cursor:pointer">📄 Mark Complete</button>`:''}
           ${c?.phone?`<a href="tel:${c.phone}" style="background:#10b981;color:#fff;border:none;border-radius:8px;padding:12px;font-size:13px;font-weight:700;cursor:pointer;text-align:center;text-decoration:none;display:block">📞 Call Client</button>`:''}
           <button onclick="openJobDetail('${j.id}')" style="background:#f1f5f9;border:1px solid #e2e8f0;border-radius:8px;padding:12px;font-size:13px;font-weight:600;cursor:pointer;color:#334155">Full Detail →</button>
         </div>
+      `:''}
+
+      ${tab==='checklist'?`
+        <div style="font-size:13px;font-weight:700;color:#0f172a;margin-bottom:10px">Close-out Checklist</div>
+        <div style="font-size:12px;color:#64748b;margin-bottom:12px">Complete these checks before raising the final invoice.</div>
+        ${(()=>{
+          const checks=[
+            ['scope','Work completed matches the approved scope'],
+            ['safety','Safety, isolation, and site hazards checked'],
+            ['photos','Before/after photos captured where relevant'],
+            ['walkthrough','Customer walkthrough or findings explained'],
+            ['variation','Any extra work or variation recorded'],
+          ];
+          const state=j.mobileChecklist||{};
+          return checks.map(([key,label])=>`<label style="display:flex;align-items:flex-start;gap:10px;background:#fff;border:1px solid ${state[key]?'#86efac':'#e2e8f0'};border-radius:10px;padding:13px 14px;margin-bottom:8px;cursor:pointer">
+            <input type="checkbox" ${state[key]?'checked':''} onchange="(function(){const j=jobs.find(x=>x.id==='${jobId}');if(!j.mobileChecklist)j.mobileChecklist={};j.mobileChecklist['${key}']=this.checked;save();renderMain();}).call(this)" style="width:18px;height:18px;accent-color:#10b981;flex-shrink:0">
+            <span style="font-size:13px;color:#0f172a;line-height:1.4">${label}</span>
+          </label>`).join('');
+        })()}
+        <div style="background:#f8fafc;border-radius:10px;padding:12px 14px;font-size:11px;color:#64748b;margin-top:12px">The checklist is saved to this job and forms part of the close-out record.</div>
       `:''}
 
       ${tab==='parts'?`
