@@ -4714,13 +4714,19 @@ function _applyStatus(j, newStatus){
   if(newStatus==='approved' && !j.poDate) j.poDate=today();
   if(newStatus==='paid' && !j.paidDate) j.paidDate=today();
   if(newStatus==='invoiced'){
-    if(!j.invoiceNumber) j.invoiceNumber=j.jobNumber;
-    if(!j.invoiceAmount && j.quoteAmount) j.invoiceAmount=j.quoteAmount;
+    const isBalanceInvoice = Number(j.quoteAmount)>0 && Number(j.depositAmount)>0 && Number(j.quoteAmount)>Number(j.depositAmount);
+    if(isBalanceInvoice || !j.invoiceNumber) j.invoiceNumber=nextInvoiceRef(j.id);
+    if(isBalanceInvoice){
+      j.invoiceAmount=(Number(j.quoteAmount)-Number(j.depositAmount)).toFixed(2);
+      j.balanceInvoiceRaisedAt=today();
+    } else if(!j.invoiceAmount && j.quoteAmount){
+      j.invoiceAmount=Number(j.quoteAmount).toFixed(2);
+    }
     if(!j.invoiceDue){
       const d=new Date(); d.setDate(d.getDate()+payTermsDays(CFG.invoicePaymentTerms||CFG.bizPaymentTerms,7));
       j.invoiceDue=d.toISOString().split('T')[0];
     }
-    showToast('Invoice auto-created — open job to adjust amount or send PDF','info');
+    showToast('Invoice '+j.invoiceNumber+' auto-created — open job to adjust amount or send PDF','info');
   }
   if(newStatus==='deposit_paid' && !j.depositDate) j.depositDate=today();
   if(newStatus==='deposit_paid' && !j.depositAmount && j.quoteAmount){
@@ -6598,7 +6604,7 @@ function markPaid(id){
   }
   j.status='paid';
   j.paidDate=today();
-  if(!j.invoiceNumber) j.invoiceNumber=j.jobNumber;
+  if(!j.invoiceNumber) j.invoiceNumber=nextInvoiceRef(j.id);
   logActivity(id,'✓ Marked paid — $'+(j.invoiceAmount||j.quoteAmount||'?'));
   save();
   renderMain();
@@ -12501,7 +12507,7 @@ const AGENT_REGISTRY = [
         `📄 ${uninvoiced.length} job${uninvoiced.length>1?'s':''} need invoicing — ${fmt$(totalValue)}`,
         uninvoiced.slice(0,4).map(j=>{const c=gc(j.clientId)||{};return `${c.company||j.jobNumber} (${fmtD(j.scheduledDate)})`}).join(' · '),
         uninvoiced.slice(0,3).map(j=>({
-          label:`Invoice ${j.jobNumber}`, fn:`(function(){const j=jobs.find(x=>x.id==='${j.id}');if(j){j.status='invoiced';j.invoiceDate=today();j.invoiceAmount=j.quoteAmount;j.invoiceNumber=j.jobNumber;save();openJobDetail('${j.id}');}})();`
+          label:`Invoice ${j.jobNumber}`, fn:`(function(){const j=jobs.find(x=>x.id==='${j.id}');if(j){j.status='invoiced';j.invoiceDate=today();j.invoiceAmount=j.quoteAmount;j.invoiceNumber=nextInvoiceRef(j.id);save();openJobDetail('${j.id}');}})();`
         }))
       );
     }
