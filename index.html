@@ -19563,6 +19563,11 @@ function openInvoiceLineEditor(jobId){
       terms: 'Payment is due within '+resolvedTermsLabel+' of invoice date. Late payment fee of 2% per month applies. This business is registered for GST. This is a tax invoice for GST purposes.'
     };
   }
+  // Keep the editable header in lockstep with the saved job invoice number.
+  // A previously opened editor can otherwise re-save an obsolete reference.
+  if(j.invoiceHeaderFields && j.invoiceNumber && j.invoiceHeaderFields.invoiceNumber !== j.invoiceNumber){
+    j.invoiceHeaderFields.invoiceNumber = j.invoiceNumber;
+  }
 
   const iS = 'padding:7px 10px;border:1.5px solid #dde3ec;border-radius:7px;font-size:13px;background:#fff;font-family:inherit;box-sizing:border-box;width:100%;color:#0e1f3d;outline:none';
   const lbl = (t) => `<label style="display:block;font-size:10px;font-weight:800;color:#5a6a80;text-transform:uppercase;letter-spacing:0.8px;margin-bottom:4px">${t}</label>`;
