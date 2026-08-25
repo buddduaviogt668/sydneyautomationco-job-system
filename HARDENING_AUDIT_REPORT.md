@@ -94,3 +94,13 @@ Do not attempt to reach ServiceM8/Xero reliability by adding more client-side he
 
 [1]: https://sydneyautomationco-job-system.vercel.app/ "Sydney Automation Co. job system"
 [2]: https://github.com/buddduaviogt668/sydneyautomationco-job-system "Sydney Automation Co. job-system repository"
+
+## Leakage-prevention release update — 25 August 2026
+
+The latest release adds three additional controls. New Quick Invoices now record explicit GST metadata and use the canonical due-date resolver. Invoice creation refuses to reuse an existing invoice or job reference. Backup restore now validates the incoming structure, displays record counts, and downloads a safety copy before replacing current data. The in-app integrity audit now flags issued invoices without due dates and deposits without an explicit status/date.
+
+The debtor view and printed debtor report now expose separate deposit and balance entries. A paid deposit produces only the remaining balance row; an unpaid deposit produces a separate deposit row; and an ordinary invoice remains a single row. The job-level total is not added twice.
+
+The live deployment was smoke-tested after the debtor release. The production runtime-error check returned no grouped runtime errors in the previous seven-day window. The live integrity audit after the authorised Maggie cleanup now reports one unresolved exception: duplicate invoice reference SAI_100041 on two historical records. That exception remains intentionally unresolved because changing either historical reference without the owner’s direction could break reconciliation.
+
+These controls make the current browser application more leakage-resistant, but they do not make it equivalent to Xero’s accounting ledger or ServiceM8’s authenticated multi-user platform. Server-side authentication, row-level security, transactional writes, immutable payment events, and a first-class invoice/payment database remain the next major architectural release.

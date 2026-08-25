@@ -1212,6 +1212,8 @@ window.runDataIntegrityAudit=function(){
     if(j.clientId && !clients.some(c=>c.id===j.clientId)) issues.push({severity:'high',type:'orphan',field:'clientId',value:j.clientId,row:i,job:j.jobNumber});
     ['invoiceAmount','quoteAmount','depositAmount'].forEach(k=>{if(j[k]!=='' && j[k]!=null && (!Number.isFinite(Number(j[k])) || Number(j[k])<0)) issues.push({severity:'high',type:'invalid_amount',field:k,value:j[k],job:j.jobNumber});});
     if(j.status==='paid' && !j.paidDate) issues.push({severity:'medium',type:'missing_paid_date',job:j.jobNumber});
+    if(['invoiced','overdue'].includes(j.status) && Number(j.invoiceAmount)>0 && !j.invoiceDue) issues.push({severity:'medium',type:'missing_due_date',job:j.jobNumber});
+    if(Number(j.depositAmount)>0 && !j.depositStatus && !j.depositDate) issues.push({severity:'medium',type:'deposit_without_status',job:j.jobNumber});
     if(j.status==='overdue' && !(Number(j.invoiceAmount)>0)) issues.push({severity:'medium',type:'overdue_without_invoice',job:j.jobNumber});
   });
   const counts={jobs:(jobs||[]).length,clients:(clients||[]).length,expenses:(expenses||[]).length,kmlog:(kmLog||[]).length,issues:issues.length};
@@ -10617,12 +10619,8 @@ function convertQuoteToInvoice(jobId){
   j.invoiceAmount = (Number(j.quoteAmount) - dep).toFixed(2);
   j.status = 'invoiced';
   j.invoiceDate = today();
-  const cfgDays = payTermsDays(CFG.invoicePaymentTerms||CFG.bizPaymentTerms, 7);
-  if(cfgDays > 0){
-    const due = new Date(today()+'T00:00:00');
-    due.setDate(due.getDate() + cfgDays);
-    j.invoiceDue = due.toISOString().split('T')[0];
-  }
+  j.invoiceDue = resolveDueDate(j.invoiceDate, CFG.invoicePaymentTerms||CFG.bizPaymentTerms||'7 days');
+  j.invoiceAmountIncludesGST = true;
   // Copy quoteDoc lines to invoiceLines for reference
   if(j.quoteDoc) j.invoiceDoc = JSON.parse(JSON.stringify(j.quoteDoc));
   save();
@@ -10720,8 +10718,8 @@ function _qiCreate(printAfter){
   if(!exGstAmount){ alert('Enter an amount.'); return; }
   const num = counters['SAI']++;
   const invNum = jobNum('SAI', num);
+  if(jobs.some(x=>x.invoiceNumber===invNum || x.jobNumber===invNum)){ alert('Invoice reference '+invNum+' already exists. No invoice was created.'); return; }
   const cfgDays = payTermsDays(CFG.invoicePaymentTerms||CFG.bizPaymentTerms, 7);
-  const dueDate = (()=>{ if(cfgDays<=0) return ''; const d=new Date(date+'T00:00:00'); d.setDate(d.getDate()+cfgDays); return d.toISOString().split('T')[0]; })();
   const gstOn = (typeof CFG !== 'undefined') && CFG.gstRegistered !== false;
   const gstRate = (typeof CFG !== 'undefined') ? (Number(CFG.gst) || 0.1) : 0.1;
   const incGstTotal = gstOn ? exGstAmount * (1 + gstRate) : exGstAmount;
@@ -10730,8 +10728,10 @@ function _qiCreate(printAfter){
     id: 'j_qi_'+Date.now(), type:'SAI', jobNumber:invNum,
     invoiceNumber:invNum, clientId, scope:desc,
     invoiceAmount:incGstTotal.toFixed(2), quoteAmount:incGstTotal.toFixed(2),
+    amountExGST:exGstAmount.toFixed(2), gstAmount:(incGstTotal-exGstAmount).toFixed(2), amountInclGST:incGstTotal.toFixed(2),
+    invoiceAmountIncludesGST:true,
     invoiceLines:[{id:Date.now().toString(), desc:desc, qty:1, unit:exGstAmount, amount:exGstAmount}],
-    status:'invoiced', createdAt:date, invoiceDate:date, invoiceDue:dueDate,
+    status:'invoiced', createdAt:date, invoiceDate:date, invoiceDue:resolveDueDate(date, CFG.invoicePaymentTerms||CFG.bizPaymentTerms||'7 days'),
     scheduledDate:date, poNumber:po, notes:'Quick invoice',
     activityLog:[{ts:today()+' (quick)',msg:'Invoice created via Quick Invoice'}],
   };
@@ -21920,9 +21920,11 @@ function importFullBackup(){
       try{
         const data = JSON.parse(evt.target.result);
         if(!data.jobs && !data.clients){ showToast('Invalid backup file','error'); return; }
-        if(!confirm(`Restore backup from ${data.exportedAt?new Date(data.exportedAt).toLocaleDateString():'unknown date'}?
-
-This will REPLACE all current data.`)) return;
+        if(!Array.isArray(data.jobs) || !Array.isArray(data.clients)){ showToast('Invalid backup file — jobs and clients must be arrays','error'); return; }
+        const incomingCounts = `Jobs: ${data.jobs.length} · Clients: ${data.clients.length} · Expenses: ${(data.expenses||[]).length}`;
+        if(!confirm(`Restore backup from ${data.exportedAt?new Date(data.exportedAt).toLocaleDateString():'unknown date'}?\n\n${incomingCounts}\n\nA safety copy of current data will be downloaded first. This will REPLACE all current data.`)) return;
+        // Always create a pre-restore safety copy before replacing live state.
+        exportFullBackup();
         restoreFromData(data);
         renderNav(); renderMain();
         showToast('Backup restored successfully','success');
