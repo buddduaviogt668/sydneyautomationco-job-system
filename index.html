@@ -10934,7 +10934,8 @@ function renderAgedDebtors(){
           </div>
           <div style="text-align:right"><div style="font-size:14px;font-weight:800;color:${bColors[bk]}">${fmt$(e.amount)}</div></div>
           <div style="display:flex;gap:5px">
-            <button onclick="sendWhatsApp('${j.id}','chase')" style="background:#25D366;color:#fff;border:none;border-radius:5px;padding:5px 8px;font-size:11px;font-weight:700;cursor:pointer" title="Chase via WhatsApp">💬</button>
+            <button onclick="sendWhatsApp('${j.id}','chase')" style="background:#25D366;color:#fff;border:none;border-radius:5px;padding:5px 8px;font-size:11px;font-weight:700;cursor:pointer" title="Draft/chase via WhatsApp">💬</button>
+            <button onclick="recordCollectionAttempt('${j.id}')" style="background:#fef3c7;border:1px solid #fde68a;color:#92400e;border-radius:5px;padding:5px 8px;font-size:11px;font-weight:700;cursor:pointer" title="Log collection attempt">Log</button>
             ${CFG.stripePaymentLinkBase?`<button onclick="openStripePaymentLink('${j.id}')" style="background:#635bff;color:#fff;border:none;border-radius:5px;padding:5px 8px;font-size:11px;font-weight:700;cursor:pointer" title="Open Stripe pay link">💳</button>`:''}
             <button onclick="openJobDetail('${j.id}')" style="background:#f1f5f9;border:1px solid #e2e8f0;border-radius:5px;padding:5px 8px;font-size:11px;font-weight:600;cursor:pointer;color:#334155">View →</button>
           </div>
@@ -10975,6 +10976,31 @@ function printAgedDebtors(){
   <button onclick="window.print()" style="margin-top:24px;background:#0f172a;color:#fff;border:none;border-radius:8px;padding:10px 20px;font-size:13px;font-weight:700;cursor:pointer">Print / Save PDF</button>
   </body></html>`);
   w.document.close();
+}
+
+// ─── COLLECTION LOG ────────────────────────────────────────────────────────────
+// Follow-up is drafted/recorded, never silently sent. Payment status is not
+// changed by this action.
+function recordCollectionAttempt(jobId){
+  const j=jobs.find(x=>x.id===jobId); if(!j) return;
+  const channel=prompt('Follow-up channel (phone, email, SMS, WhatsApp):','phone');
+  if(!channel) return;
+  const note=prompt('What happened? Include any promise-to-pay date if given:','');
+  if(note===null) return;
+  const promise=prompt('Promise-to-pay date (YYYY-MM-DD), if provided:','')||'';
+  const entry={id:'col_'+Date.now(),date:today(),channel:channel.trim(),note:note.trim(),promiseDate:promise.trim()};
+  j.collectionLog=(j.collectionLog||[]).concat([entry]);
+  j.lastCollectionContact=entry.date;
+  if(entry.promiseDate) j.promiseToPayDate=entry.promiseDate;
+  j.activityLog=(j.activityLog||[]).concat([{ts:new Date().toLocaleString('en-AU'),msg:'Collection follow-up logged via '+entry.channel+(entry.promiseDate?' · promise '+entry.promiseDate:'')}]);
+  save();
+  showToast('Collection follow-up saved — payment status unchanged','success');
+  renderMain();
+}
+
+function latestCollectionNote(j){
+  const a=(j?.collectionLog||[]).slice(-1)[0];
+  return a?`${a.date} · ${a.channel}${a.promiseDate?' · promise '+a.promiseDate:''}`:'';
 }
 
 // ─── JOB NOTES (timestamped) ────────────────────────────────────────────────
