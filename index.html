@@ -6428,6 +6428,20 @@ function _invoiceRefAvailable(ref, exceptId){
   return false;
 }
 
+// Allocate the next unused invoice reference. Invoice refs are independent of
+// job numbers so a deposit invoice and its final balance invoice never collide.
+function nextInvoiceRef(exceptId){
+  const used=new Set((jobs||[])
+    .filter(x=>x.id!==exceptId)
+    .map(x=>String(x.invoiceNumber||'').trim().toLowerCase())
+    .filter(Boolean));
+  let n=Math.max(Number(counters?.SAI)||0,100001);
+  let ref='';
+  do { ref='SAI_'+n++; } while(used.has(ref.toLowerCase()));
+  counters.SAI=n;
+  return ref;
+}
+
 // ─── ACTIONS ──────────────────────────────────────────────────────────────────
 function advanceJob(id, next){
   const j=jobs.find(x=>x.id===id);
@@ -6438,15 +6452,19 @@ function advanceJob(id, next){
 
   const updates={status:next};
 
-  // ── INVOICED: auto-generate invoice number + pre-fill amount from quote ──────
+  // ── INVOICED: allocate a fresh invoice number + pre-fill amount from quote ──
   if(next==='invoiced'){
-    // Auto-generate invoice number if not already set
-    if(!j.invoiceNumber){
-      updates.invoiceNumber = j.jobNumber; // use job number as invoice ref
+    const isBalanceInvoice = Number(j.quoteAmount)>0 && Number(j.depositAmount)>0 && Number(j.quoteAmount)>Number(j.depositAmount);
+    // A balance/final invoice must never reuse the job or deposit invoice ref.
+    // For new standard invoices, use the same independent sequential allocator.
+    if(isBalanceInvoice || !j.invoiceNumber){
+      updates.invoiceNumber = nextInvoiceRef(j.id);
     }
-    // Auto-fill invoice amount from quote amount if not already invoiced
-    if(!j.invoiceAmount && j.quoteAmount){
-      updates.invoiceAmount = (Number(j.quoteAmount) - (Number(j.depositAmount)||0)).toFixed(2);
+    if(isBalanceInvoice){
+      updates.invoiceAmount = (Number(j.quoteAmount) - Number(j.depositAmount)).toFixed(2);
+      updates.balanceInvoiceRaisedAt = today();
+    } else if(!j.invoiceAmount && j.quoteAmount){
+      updates.invoiceAmount = Number(j.quoteAmount).toFixed(2);
     }
     // Auto-set due date from payment terms
     if(!j.invoiceDue){
@@ -6454,7 +6472,7 @@ function advanceJob(id, next){
       dueD.setDate(dueD.getDate() + payTermsDays(CFG.bizPaymentTerms,14));
       updates.invoiceDue = dueD.toISOString().split('T')[0];
     }
-    // Check for any manually entered values (user may have pre-filled)
+    // Allow an intentional manual reference/amount/date, but validate the ref.
     const manualNum = document.getElementById('inv-num')?.value.trim();
     const manualAmt = document.getElementById('inv-amt')?.value;
     const manualDue = document.getElementById('inv-due')?.value;
@@ -21843,7 +21861,7 @@ function raiseBalanceInvoice(jobId){
   const b = calcBalanceRemaining(j);
   if(!b){ showToast('No balance due for this job','info'); return; }
   // Pre-fill invoice fields and advance to invoiced
-  const nextNum = 'SAI_' + (counters.SAI++);
+  const nextNum = nextInvoiceRef(j.id);
   j.invoiceNumber = nextNum;
   j.invoiceAmount = b.balance.toFixed(2);
   const dueDate = new Date();
