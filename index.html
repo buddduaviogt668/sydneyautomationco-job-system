@@ -13027,6 +13027,12 @@ function getCloseoutGaps(j){
 const _origAdvanceJob = advanceJob;
 function advanceJob(id, next){
   const current=jobs.find(x=>x.id===id);
+  if(current && Number(current.depositAmount)>0 && !current.depositDate && ['parts_ordered','scheduled','work_order'].includes(next) && !current.depositOverrideAt){
+    const ok=confirm('Deposit check: this job has an unpaid deposit of '+fmt$(Number(current.depositAmount))+' .\\n\\nCancel to wait for payment, or OK to continue and record a deposit override.');
+    if(!ok) return;
+    current.depositOverrideAt=today();
+    current.activityLog=(current.activityLog||[]).concat([{ts:new Date().toLocaleString('en-AU'),msg:'Workflow advanced with unpaid-deposit override: '+fmt$(Number(current.depositAmount))}]);
+  }
   if(current && ['scheduled','work_order','parts_ordered'].includes(current.status) && next==='invoiced'){
     const gaps=getCloseoutGaps(current);
     if(gaps.length && !current.closeoutOverrideAt){
@@ -21358,6 +21364,7 @@ function recordApproval(jobId){
   j.approvalRef   = authRef || j.poNumber || '';
   j.depositAmount = depAmt>0 ? depAmt.toFixed(2) : '';
   j.depositPct    = depPct;
+  j.depositStatus = depAmt>0 ? 'unpaid' : '';
   j.status        = 'approved';
   j.poNumber      = authRef || j.poNumber || '';
 
