@@ -1,9 +1,0 @@
-Invoice numbering diagnosis — source: https://sydneyautomationco-job-system.vercel.app/ and linked repo https://github.com/buddduaviogt668/sydneyautomationco-job-system
-
-Verified live data: AJB Electrical job SAI_100103 has quoteAmount 24035.00, depositAmount 14420.99, invoiceAmount 9614, invoiceNumber SAI_100103, status overdue, invoiceDate 2026-08-07, invoiceDue 2026-09-30. Jago job SAI_100104 remains invoiceNumber SAI_100104, invoiceAmount 1628.58.
-
-Permanent fixes already deployed in commits babe3a1 and c3dac14: nextInvoiceRef(exceptId) allocates collision-free sequential SAI refs; advanceJob and raiseBalanceInvoice use it; _applyStatus, mark-paid fallback, and AI invoice shortcut use it. Production deployment c3dac14 was READY.
-
-Newly verified cause of the displayed 103: openInvoiceLineEditor creates invoiceHeaderFields once, with invoiceNumber from the old j.invoiceNumber. _ilSaveAndPrint copies invoiceHeaderFields.invoiceNumber back to j.invoiceNumber, and generateInvoicePDF prefers hf.invoiceNumber over j.invoiceNumber. Thus an old cached header (SAI_100103) can overwrite a corrected job number during Save & Generate. Relevant source in index.html: openInvoiceLineEditor around 19537; header initialization around 19549; syncHeaderFields around 19777; _ilSaveAndPrint around 19869; generateInvoicePDF around 19884 onward.
-
-Next fix: after header initialization, synchronize invoiceHeaderFields.invoiceNumber to j.invoiceNumber when they differ, then deploy. Manual amendment should be made in the invoice editor's Invoice Number field and saved with Save & Generate Invoice PDF; this updates both j.invoiceNumber and header field, and PDF reads the header field. If using job detail Invoice Number field, opening the editor after the sync fix should update the header value.

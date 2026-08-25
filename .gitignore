@@ -1,0 +1,14 @@
+# Local customer, job, invoice, and financial data — never commit
+.private-recovery/
+*Backup*.json
+*Data*.json
+*JobSystem*.html
+index_original_backup.html
+index.before*.html
+index.pre_*.html
+*audit*_output.*
+financial_audit_report.md
+HARDENING_AUDIT_REPORT.md
+hardening_audit_notes.md
+invoice_number_diagnosis.md
+*.local.json
