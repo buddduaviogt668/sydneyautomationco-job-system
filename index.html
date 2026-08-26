@@ -2792,6 +2792,7 @@ const NAV_ITEMS = [
   {id:'quotes',icon:'📋',label:'Quotes'},
   {id:'clients',icon:'◉',label:'Clients'},
   {id:'invoices',icon:'◎',label:'Invoices'},
+  {id:'invoicecontrol',icon:'🧾',label:'Invoice Inbox'},
   {id:'po',icon:'◇',label:'Pipeline'},
   {id:'recurring',icon:'↺',label:'Recurring'},
   {id:'parts',icon:'◧',label:'Parts'},
@@ -3103,6 +3104,7 @@ function renderMain(){
   else if(currentScreen==='quotes') el.innerHTML = renderQuotes();
   else if(currentScreen==='clients') el.innerHTML = renderClients();
   else if(currentScreen==='invoices') el.innerHTML = renderInvoices();
+  else if(currentScreen==='invoicecontrol') el.innerHTML = renderInvoiceControl();
   else if(currentScreen==='po')    el.innerHTML = renderPO();
   else if(currentScreen==='recurring') el.innerHTML = renderRecurring();
   else if(currentScreen==='parts') el.innerHTML = renderParts();
@@ -4312,6 +4314,93 @@ function renderClients(){
   </div>`;
 }
 // ─── INVOICES ─────────────────────────────────────────────────────────────────
+// ─── INVOICE CONTROL WORKFLOW ────────────────────────────────────────────────
+// New invoices enter as needs_review and never affect profit/commitments until approved.
+function invoiceControlStatus(inv){ return inv.invoiceControlStatus || (inv.createdAt ? 'approved' : 'needs_review'); }
+function invoiceControlPaid(inv){ return inv.paymentStatus==='paid' || inv.paid===true || !!inv.paidDate; }
+function invoiceControlFingerprint(inv){
+  return [String(inv.supplier||inv.supplierName||'').trim().toLowerCase(), String(inv.ref||'').replace(/[^a-z0-9]/gi,'').toLowerCase(), Number(inv.amount||0).toFixed(2)].join('|');
+}
+function invoiceControlDuplicate(inv, excludeId){
+  const fp=invoiceControlFingerprint(inv);
+  return (window._supInvoices||[]).find(x=>x.id!==excludeId && invoiceControlFingerprint(x)===fp);
+}
+function invoiceControlJobLabel(j){ const c=gc(j.clientId)||{}; return (j.jobNumber||'')+' — '+(c.company||c.contact||'Unknown client'); }
+function invoiceControlSave(){ saveSupInvoices(); renderNav(); if(currentScreen==='invoicecontrol') renderMain(); }
+function invoiceControlApprove(id){
+  const inv=(window._supInvoices||[]).find(x=>x.id===id); if(!inv) return;
+  inv.invoiceControlStatus='approved'; inv.approvedAt=new Date().toISOString(); inv.approvedBy='owner'; invoiceControlSave(); showToast('Invoice approved and added to job costing','success');
+}
+function invoiceControlReject(id){
+  const inv=(window._supInvoices||[]).find(x=>x.id===id); if(!inv) return;
+  inv.invoiceControlStatus='rejected'; inv.rejectedAt=new Date().toISOString(); invoiceControlSave(); showToast('Invoice rejected — retained for audit','info');
+}
+function invoiceControlTogglePaid(id){
+  const inv=(window._supInvoices||[]).find(x=>x.id===id); if(!inv) return;
+  if(invoiceControlPaid(inv)){ inv.paymentStatus='unpaid'; delete inv.paidDate; } else { inv.paymentStatus='paid'; inv.paidDate=today(); }
+  invoiceControlSave(); showToast(invoiceControlPaid(inv)?'Invoice marked paid':'Invoice marked unpaid','success');
+}
+function invoiceControlAdd(){
+  const supplier=(document.getElementById('ic-supplier')?.value||'').trim();
+  const ref=(document.getElementById('ic-ref')?.value||'').trim();
+  const date=document.getElementById('ic-date')?.value||today();
+  const amount=parseFloat(document.getElementById('ic-amount')?.value||'0')||0;
+  const gst=parseFloat(document.getElementById('ic-gst')?.value||'0')||0;
+  const jobRef=document.getElementById('ic-job')?.value||'';
+  const costType=document.getElementById('ic-costtype')?.value||'parts';
+  const notes=(document.getElementById('ic-notes')?.value||'').trim();
+  if(!supplier||!ref||amount<=0){ showToast('Supplier, invoice number and total are required','warn'); return; }
+  const draft={supplier,ref,date,amount,gstAmount:gst,jobRef,costType};
+  const dup=invoiceControlDuplicate(draft);
+  if(dup && !confirm('Possible duplicate of '+(dup.ref||'existing invoice')+' for '+fmt$(dup.amount)+'. Add anyway for review?')) return;
+  const job=jobs.find(j=>j.jobNumber===jobRef);
+  const id='sinv_'+Date.now();
+  const record={id,jobId:job?.id||'',jobRef,supplier,supplierName:supplier,ref,date,amount,gstAmount:gst,costType,notes,createdAt:new Date().toISOString(),invoiceControlStatus:'needs_review',paymentStatus:'unpaid',duplicateOf:dup?.id||'',fileData:false};
+  if(window._pendingSupInvFile){
+    try{ localStorage.setItem('sac:sinv:'+id,window._pendingSupInvFile.data); record.fileName=window._pendingSupInvFile.name; record.fileType=window._pendingSupInvFile.type; record.fileData=true; }catch(e){ showToast('File too large to store locally; record will still be saved','warn'); }
+    window._pendingSupInvFile=null;
+  }
+  (window._supInvoices||[]).push(record); invoiceControlSave();
+  ['ic-supplier','ic-ref','ic-amount','ic-gst','ic-notes'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
+  const f=document.getElementById('ic-file'); if(f)f.value=''; const fl=document.getElementById('ic-file-label'); if(fl)fl.textContent='No document selected';
+  showToast('Invoice added to review queue — not yet included in reports','success');
+}
+function renderInvoiceControl(){
+  const all=window._supInvoices||[];
+  const q=(window._icFilter||'review');
+  const review=all.filter(i=>invoiceControlStatus(i)==='needs_review');
+  const approved=all.filter(i=>invoiceControlStatus(i)==='approved');
+  const rejected=all.filter(i=>invoiceControlStatus(i)==='rejected');
+  const unpaid=all.filter(i=>!invoiceControlPaid(i)&&invoiceControlStatus(i)!=='rejected');
+  const list=(q==='all'?all:q==='approved'?approved:q==='unpaid'?unpaid:q==='rejected'?rejected:review).slice().sort((a,b)=>new Date(b.createdAt||b.date||0)-new Date(a.createdAt||a.date||0));
+  const jobsWithRefs=jobs.filter(j=>j.jobNumber).sort((a,b)=>(a.jobNumber||'').localeCompare(b.jobNumber||''));
+  const totalUnpaid=unpaid.reduce((s,i)=>s+Number(i.amount||0),0);
+  const reviewTotal=review.reduce((s,i)=>s+Number(i.amount||0),0);
+  const approvedTotal=approved.reduce((s,i)=>s+Number(i.amount||0),0);
+  const statusButton=(key,label,count,color)=>'<button onclick="window._icFilter=\''+key+'\';renderMain()" style="border:none;border-bottom:3px solid '+(q===key?color:'transparent')+';background:transparent;padding:10px 12px;color:'+(q===key?'#0f172a':'#64748b')+';font-size:12px;font-weight:700;cursor:pointer">'+label+' <span style="background:'+(q===key?color:'#e2e8f0')+';color:'+(q===key?'#fff':'#64748b')+';padding:2px 6px;border-radius:10px">'+count+'</span></button>';
+  return '<div style="padding:24px 28px;max-width:1200px">'
+    +'<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:14px;flex-wrap:wrap;margin-bottom:20px"><div><h1 style="font-size:26px;font-weight:800;color:#0f172a;margin:0">Supplier Invoice Control</h1><div style="font-size:13px;color:#64748b;margin-top:4px">Upload once, match once, approve once — every invoice remains auditable.</div></div><button onclick="goto(\'parts\')" style="background:#f1f5f9;border:1px solid #e2e8f0;border-radius:8px;padding:9px 14px;font-size:12px;font-weight:700;color:#334155;cursor:pointer">View legacy invoice list</button></div>'
+    +'<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin-bottom:20px">'
+    +'<div style="background:#fff7ed;border:1px solid #fed7aa;border-radius:10px;padding:14px"><div style="font-size:10px;color:#9a3412;font-weight:800;text-transform:uppercase">Needs review</div><div style="font-size:22px;font-weight:800;color:#c2410c">'+review.length+'</div><div style="font-size:11px;color:#9a3412">'+fmt$(reviewTotal)+' not in profit yet</div></div>'
+    +'<div style="background:#fffbeb;border:1px solid #fde68a;border-radius:10px;padding:14px"><div style="font-size:10px;color:#92400e;font-weight:800;text-transform:uppercase">Unpaid commitments</div><div style="font-size:22px;font-weight:800;color:#b45309">'+fmt$(totalUnpaid)+'</div><div style="font-size:11px;color:#92400e">'+unpaid.length+' invoices</div></div>'
+    +'<div style="background:#ecfdf5;border:1px solid #a7f3d0;border-radius:10px;padding:14px"><div style="font-size:10px;color:#047857;font-weight:800;text-transform:uppercase">Approved costs</div><div style="font-size:22px;font-weight:800;color:#047857">'+fmt$(approvedTotal)+'</div><div style="font-size:11px;color:#047857">'+approved.length+' invoices</div></div>'
+    +'<div style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:10px;padding:14px"><div style="font-size:10px;color:#1d4ed8;font-weight:800;text-transform:uppercase">All records</div><div style="font-size:22px;font-weight:800;color:#1d4ed8">'+all.length+'</div><div style="font-size:11px;color:#1d4ed8">Original history retained</div></div>'
+    +'</div>'
+    +'<div style="background:#fff;border:1px solid #e2e8f0;border-radius:12px;padding:16px;margin-bottom:18px"><div style="font-size:14px;font-weight:800;color:#0f172a;margin-bottom:4px">＋ Add supplier or labour invoice</div><div style="font-size:11px;color:#64748b;margin-bottom:14px">New entries begin as <b>Needs review</b> and do not change profitability until approved.</div><div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:10px">'
+    +'<input id="ic-supplier" placeholder="Supplier name" style="padding:10px;border:1px solid #cbd5e1;border-radius:7px;font-size:12px">'
+    +'<input id="ic-ref" placeholder="Invoice number / reference" style="padding:10px;border:1px solid #cbd5e1;border-radius:7px;font-size:12px">'
+    +'<input id="ic-date" type="date" value="'+today()+'" style="padding:10px;border:1px solid #cbd5e1;border-radius:7px;font-size:12px">'
+    +'<input id="ic-amount" type="number" step="0.01" placeholder="Total incl. GST" style="padding:10px;border:1px solid #cbd5e1;border-radius:7px;font-size:12px">'
+    +'<input id="ic-gst" type="number" step="0.01" placeholder="GST component" style="padding:10px;border:1px solid #cbd5e1;border-radius:7px;font-size:12px">'
+    +'<select id="ic-costtype" style="padding:10px;border:1px solid #cbd5e1;border-radius:7px;font-size:12px"><option value="parts">Parts / materials</option><option value="labour">Labour / subcontractor</option></select>'
+    +'<select id="ic-job" style="padding:10px;border:1px solid #cbd5e1;border-radius:7px;font-size:12px"><option value="">— Select SAI job —</option>'+jobsWithRefs.map(j=>'<option value="'+esc(j.jobNumber)+'">'+esc(invoiceControlJobLabel(j))+'</option>').join('')+'</select>'
+    +'<input id="ic-notes" placeholder="Notes (optional)" style="padding:10px;border:1px solid #cbd5e1;border-radius:7px;font-size:12px">'
+    +'<label style="display:flex;align-items:center;gap:8px;padding:8px 10px;border:1px dashed #94a3b8;border-radius:7px;font-size:12px;color:#64748b;cursor:pointer"><input id="ic-file" type="file" accept="application/pdf,image/*" style="display:none" onchange="window._supInvAttach(this);document.getElementById(\'ic-file-label\').textContent=this.files[0]?.name||\'No document selected\'">📎 <span id="ic-file-label">No document selected</span></label>'
+    +'</div><div style="display:flex;justify-content:flex-end;margin-top:12px"><button onclick="invoiceControlAdd()" style="background:#1e3a5f;color:#fff;border:none;border-radius:8px;padding:10px 18px;font-size:12px;font-weight:800;cursor:pointer">Add to review queue</button></div></div>'
+    +'<div style="background:#fff;border:1px solid #e2e8f0;border-radius:12px;overflow:hidden"><div style="display:flex;gap:4px;flex-wrap:wrap;padding:8px 12px;border-bottom:1px solid #e2e8f0;background:#f8fafc">'+statusButton('review','Needs review',review.length,'#f59e0b')+statusButton('unpaid','Unpaid',unpaid.length,'#d97706')+statusButton('approved','Approved',approved.length,'#10b981')+statusButton('rejected','Rejected',rejected.length,'#ef4444')+statusButton('all','All records',all.length,'#6366f1')+'</div>'
+    +(list.length?list.map(inv=>{const j=jobs.find(x=>x.id===inv.jobId)||jobs.find(x=>x.jobNumber===inv.jobRef);const c=j?gc(j.clientId)||{}:{};const st=invoiceControlStatus(inv);const dup=invoiceControlDuplicate(inv,inv.id);return '<div style="padding:14px 16px;border-bottom:1px solid #f1f5f9"><div style="display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap"><div style="min-width:220px;flex:1"><div style="font-size:13px;font-weight:800;color:#0f172a">'+esc(inv.supplier||'Unknown supplier')+' · '+esc(inv.ref||'No reference')+'</div><div style="font-size:11px;color:#64748b;margin-top:3px">'+(inv.jobRef?esc(inv.jobRef)+' · '+esc(c.company||''):'Not linked to a job')+' · '+fmtD(inv.date||'')+'</div><div style="font-size:11px;color:#64748b;margin-top:4px">'+(inv.fileName?'📎 '+esc(inv.fileName)+' · ':'')+(inv.costType==='labour'?'Labour':'Parts')+(inv.gstAmount!=null?' · GST '+fmt$(inv.gstAmount):'')+(dup?' · ⚠ possible duplicate':'')+'</div></div><div style="text-align:right"><div style="font-size:16px;font-weight:800;color:#0f172a">'+fmt$(inv.amount)+'</div><div style="font-size:10px;font-weight:800;color:'+(st==='needs_review'?'#c2410c':st==='approved'?'#047857':'#64748b')+';text-transform:uppercase">'+st.replace('_',' ')+'</div><div style="font-size:10px;color:'+(invoiceControlPaid(inv)?'#047857':'#b45309')+'">'+(invoiceControlPaid(inv)?'✓ Paid '+fmtD(inv.paidDate):'Unpaid commitment')+'</div></div></div><div style="display:flex;gap:7px;flex-wrap:wrap;margin-top:10px">'+(st==='needs_review'?'<button onclick="invoiceControlApprove(\''+inv.id+'\')" style="background:#10b981;color:#fff;border:none;border-radius:6px;padding:6px 10px;font-size:11px;font-weight:700;cursor:pointer">Approve</button><button onclick="invoiceControlReject(\''+inv.id+'\')" style="background:#fff;border:1px solid #fecaca;color:#b91c1c;border-radius:6px;padding:6px 10px;font-size:11px;font-weight:700;cursor:pointer">Reject</button>':'')+'<button onclick="invoiceControlTogglePaid(\''+inv.id+'\')" style="background:#f8fafc;border:1px solid #cbd5e1;color:#334155;border-radius:6px;padding:6px 10px;font-size:11px;font-weight:700;cursor:pointer">'+(invoiceControlPaid(inv)?'Mark unpaid':'Mark paid')+'</button>'+(inv.fileData?'<button onclick="window._viewSupInv(\''+inv.id+'\')" style="background:#eff6ff;border:1px solid #bfdbfe;color:#1d4ed8;border-radius:6px;padding:6px 10px;font-size:11px;font-weight:700;cursor:pointer">View document</button>':'')+'<button onclick="window._editSupInv(\''+inv.id+'\')" style="background:#fff;border:1px solid #e2e8f0;color:#475569;border-radius:6px;padding:6px 10px;font-size:11px;font-weight:700;cursor:pointer">Edit</button></div></div>';}).join(''):'<div style="padding:36px;text-align:center;color:#94a3b8;font-size:13px">No records in this view.</div>')+'</div></div>';
+}
+
 function renderInvoices(){
   const validJobs = jobs.filter(j=>!(j.jobNumber||'').startsWith('SAQ') && j.type!=='SAQ');
   const inv = validJobs.filter(j=>['invoiced','overdue','paid'].includes(j.status)).sort((a,b)=>new Date(b.createdAt)-new Date(a.createdAt));
@@ -14466,6 +14555,9 @@ function renderProfitability(){
         var sn = (inv.supplier||inv.supplierName||'').toLowerCase();
         inv.costType = (sn.indexOf('electrical')>=0||sn.indexOf('electric')>=0||sn.indexOf('lydement')>=0||sn.indexOf('labour')>=0) ? 'labour' : 'parts';
       }
+      const controlState = typeof invoiceControlStatus==='function' ? invoiceControlStatus(inv) : 'approved';
+      // Pending or rejected documents remain visible in Invoice Control but do not affect profit.
+      if(controlState==='needs_review' || controlState==='rejected') return false;
       return inv.jobId === j.id || inv.jobRef === j.jobNumber;
     }));
     let partsCost = 0;
