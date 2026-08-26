@@ -8654,7 +8654,7 @@ function monthlyCashForecast(monthCount=6){
   const receivableJobIds=new Set(recs.map(e=>e.j?.id).filter(Boolean));
   const bookedStatuses=['booking','approved','scheduled','parts_ordered','work_order','po_received'];
   const bookedJobs=(jobs||[]).filter(j=>bookedStatuses.includes(j.status)&&!receivableJobIds.has(j.id)&&j.status!=='paid')
-    .map(j=>({...j,forecastAmount:Math.max(0,Number(j.quoteAmount)||Number(j.invoiceAmount)||0),forecastDate:cashBookedForecastDate(j)}))
+    .map(j=>({...j,forecastAmount:Number(j.invoiceAmount)>0?jobAmountDisplay(j):Math.max(0,Number(j.quoteAmount)||0),forecastAmountType:Number(j.invoiceAmount)>0?'invoiced':'quoted',forecastDate:cashBookedForecastDate(j)}))
     .filter(j=>j.forecastAmount>0);
   const quotedJobs=(jobs||[]).filter(j=>j.status==='quoted'&&Number(j.quoteAmount)>0);
   const weightedPipeline=quotedJobs.reduce((s,j)=>s+Number(j.quoteAmount||0),0)*0.4;
