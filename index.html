@@ -3009,8 +3009,8 @@ function calcTotalCosts(jobsList, dateFilter) {
 // reference/amount, and creates a missing invoice only when the job exists.
 function normalizeConfirmedValdisAllocations(){
   const allocations = {
-    'SAI_100067': {ref:'00000729', supplier:'Sharper Automation Pty Limited', amount:1788.46, date:'2026-05-26', costType:'parts', gstExempt:true, gstAmount:0, notes:'User-confirmed Valdis allocation: Sharper invoice #00000729; job was before GST registration.'},
-    'SAI_100070': {ref:'102', supplier:'J Lydement Electrical Pty Ltd', amount:660.00, date:'2026-05-26', costType:'labour', gstExempt:true, gstAmount:0, notes:'User-confirmed Valdis allocation: J Lydement invoice #102; job was before GST registration.'},
+    'SAI_100067': {ref:'00000729', supplier:'Sharper Automation Pty Limited', amount:1788.46, date:'2026-05-26', costType:'parts', gstExempt:true, gstAmount:162.59, notes:'User-confirmed Valdis allocation: Sharper invoice #00000729; job was before GST registration.'},
+    'SAI_100070': {ref:'102', supplier:'J Lydement Electrical Pty Ltd', amount:660.00, date:'2026-05-26', costType:'labour', gstExempt:true, gstAmount:60.00, notes:'User-confirmed Valdis allocation: J Lydement invoice #102; job was before GST registration.'},
     'SAI_100097': {ref:'163', supplier:'J Lydement Electrical Pty Ltd', amount:935.88, date:'2026-07-24', costType:'labour', gstExempt:false, gstAmount:85.08, notes:'User-confirmed Valdis allocation: J Lydement invoice #163; job was after GST registration.'},
   };
   let changed = false;
