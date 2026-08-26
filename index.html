@@ -8121,6 +8121,27 @@ function drawFinancialCharts(){
   }
   function fmtFull(v){ return '$'+Number(Math.round(v)).toLocaleString(); }
 
+  // ── CHART 0: Six-Month Cash Flow Forecast ───────────────────────────────────
+  var forecastCanvas=document.getElementById('forecast-cash-chart');
+  var forecastRows=(window._finForecast&&window._finForecast.rows)||[];
+  if(forecastCanvas&&forecastRows.length){
+    var fc=forecastCanvas.getContext('2d'), fdpr=window.devicePixelRatio||1, FW=forecastCanvas.getBoundingClientRect().width||forecastCanvas.offsetWidth||800, FH=260;
+    forecastCanvas.width=FW*fdpr; forecastCanvas.height=FH*fdpr; forecastCanvas.style.height=FH+'px'; fc.scale(fdpr,fdpr); fc.clearRect(0,0,FW,FH);
+    var fp={top:34,right:24,bottom:50,left:62}, fW=FW-fp.left-fp.right, fH=FH-fp.top-fp.bottom, fn=forecastRows.length;
+    var fMax=1; forecastRows.forEach(function(r){fMax=Math.max(fMax,r.invoiceReceipts||0,r.bookedReceipts||0,(r.supplierPayments||0)+(r.overheads||0),Math.abs(r.net||0));}); fMax*=1.18;
+    for(var fg=0;fg<=4;fg++){var fv=fMax*fg/4, fy=fp.top+fH-fH*(fv/fMax);fc.strokeStyle=fg===0?'#cbd5e1':'#f1f5f9';fc.lineWidth=fg===0?1.5:1;fc.beginPath();fc.moveTo(fp.left,fy);fc.lineTo(fp.left+fW,fy);fc.stroke();fc.fillStyle='#94a3b8';fc.font='10px sans-serif';fc.textAlign='right';fc.fillText(fmtK(fv),fp.left-8,fy+4);}
+    var fgW=fW/fn, fbW=Math.min(Math.floor(fgW*.42),42);
+    forecastRows.forEach(function(r,i){
+      var cx=fp.left+i*fgW+fgW/2, base=fp.top+fH, inv=Number(r.invoiceReceipts||0), booked=Number(r.bookedReceipts||0), sup=Number(r.supplierPayments||0), ohf=Number(r.overheads||0);
+      var inH=fH*((inv+booked)/fMax), supH=fH*(sup/fMax), ohH=fH*(ohf/fMax), x=cx-fbW/2;
+      if(inH>0){fc.fillStyle='#10b981';fc.fillRect(x,base-inH,fbW,fH*(inv/fMax));fc.fillStyle='#3b82f6';fc.fillRect(x,base-inH+fH*(inv/fMax),fbW,fH*(booked/fMax));}
+      var ox=cx+fbW/2+5; if(supH>0){fc.fillStyle='#ef4444';fc.fillRect(ox,base-supH-ohH,fbW, supH);fc.fillStyle='#f97316';fc.fillRect(ox,base-ohH,fbW,ohH);}
+      var ly=base-fH*((r.net||0)/fMax); if(r.net<0) ly=base; fc.fillStyle='#7c3aed';fc.beginPath();fc.arc(cx,ly,4,0,Math.PI*2);fc.fill(); if(i>0){var pr=forecastRows[i-1], pcx=fp.left+(i-1)*fgW+fgW/2, ply=base-fH*((pr.net||0)/fMax);if(pr.net<0)ply=base;fc.strokeStyle='#7c3aed';fc.lineWidth=2;fc.beginPath();fc.moveTo(pcx,ply);fc.lineTo(cx,ly);fc.stroke();}
+      fc.fillStyle='#475569';fc.font='11px sans-serif';fc.textAlign='center';fc.fillText(r.label,cx,FH-29);fc.fillStyle=(r.net<0?'#dc2626':'#64748b');fc.font='10px sans-serif';fc.fillText((r.net<0?'−':'')+fmtK(Math.abs(r.net)),cx,FH-15);
+    });
+    fc.fillStyle='#10b981';fc.fillRect(fp.left,12,11,11);fc.fillStyle='#475569';fc.font='10px sans-serif';fc.textAlign='left';fc.fillText('Invoiced receipts',fp.left+15,21);fc.fillStyle='#3b82f6';fc.fillRect(fp.left+112,12,11,11);fc.fillStyle='#475569';fc.fillText('Booked jobs',fp.left+127,21);fc.fillStyle='#ef4444';fc.fillRect(fp.left+205,12,11,11);fc.fillStyle='#475569';fc.fillText('Supplier payments',fp.left+220,21);fc.fillStyle='#f97316';fc.fillRect(fp.left+324,12,11,11);fc.fillStyle='#475569';fc.fillText('Overheads',fp.left+339,21);fc.strokeStyle='#7c3aed';fc.lineWidth=2;fc.beginPath();fc.moveTo(fp.left+425,17);fc.lineTo(fp.left+439,17);fc.stroke();fc.fillStyle='#475569';fc.fillText('Net movement',fp.left+445,21);
+  }
+
   // Only show months that have revenue or costs — skip empty months
   var activeData = monthData.filter(function(d){ return d.rev>0||d.supCost>0||d.fixedCost>0; });
   if(!activeData.length) activeData = monthData.slice(-3);
@@ -8709,6 +8730,7 @@ function renderFinancials(){
   const reportMs = window._finMonth || todayStr.slice(0,7);
   const overheadCats = overheadCategoryTotals();
   const monthlyForecast = monthlyCashForecast(6);
+  window._finForecast = monthlyForecast;
   saveMonthlyForecastSnapshot(monthlyForecast);
 
   // Australian Financial Year: Jul 1 – Jun 30
@@ -8934,6 +8956,11 @@ function renderFinancials(){
 
     ${renderMonthlyReport(reportMs)}
     ${renderMonthlyCashForecast(monthlyForecast)}
+    <div style="background:#fff;border:1px solid #e2e8f0;border-radius:12px;padding:20px 24px;margin-bottom:20px">
+      <div style="display:flex;justify-content:space-between;align-items:baseline;gap:10px;flex-wrap:wrap;margin-bottom:4px"><div style="font-size:14px;font-weight:700;color:#0f172a">Cash-Flow Trend</div><div style="font-size:11px;color:#94a3b8">six-month forecast · same data as table</div></div>
+      <div style="font-size:11px;color:#64748b;margin-bottom:8px">Bars show expected money in and money out. The purple line shows monthly net movement. Values are dated estimates, not cleared bank transactions.</div>
+      <canvas id="forecast-cash-chart" width="800" height="260" style="width:100%;height:260px;display:block"></canvas>
+    </div>
 
     <!-- ── BUSINESS INTELLIGENCE CARDS ── -->
     <div style="display:flex;gap:16px;margin-bottom:24px;flex-wrap:wrap">
