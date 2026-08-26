@@ -8640,6 +8640,10 @@ function cashSupplierForecastDate(i){
   const d=new Date(base+'T00:00:00'); d.setDate(d.getDate()+Number(i?.termsDays||7));
   return d.toISOString().slice(0,10);
 }
+function cashBookedForecastDate(j){
+  if(j?.scheduledDate){ const d=new Date(j.scheduledDate+'T00:00:00'); d.setDate(d.getDate()+Number(j?.paymentTermsDays||CFG.invoicePaymentTerms||7)); return d.toISOString().slice(0,10); }
+  return j?.invoiceDue||'';
+}
 function monthlyCashForecast(monthCount=6){
   const start=new Date(today().slice(0,7)+'-01T00:00:00');
   const recs=typeof cashReceivables==='function'?cashReceivables():[];
@@ -8647,19 +8651,28 @@ function monthlyCashForecast(monthCount=6){
   const cfg=typeof cashControlConfig==='function'?cashControlConfig():{};
   const opening=cfg.bankBalance!==''&&Number.isFinite(Number(cfg.bankBalance))?Number(cfg.bankBalance):null;
   const oh=overheadMonthlyTotal();
+  const receivableJobIds=new Set(recs.map(e=>e.j?.id).filter(Boolean));
+  const bookedStatuses=['booking','approved','scheduled','parts_ordered','work_order','po_received'];
+  const bookedJobs=(jobs||[]).filter(j=>bookedStatuses.includes(j.status)&&!receivableJobIds.has(j.id)&&j.status!=='paid')
+    .map(j=>({...j,forecastAmount:Math.max(0,Number(j.quoteAmount)||Number(j.invoiceAmount)||0),forecastDate:cashBookedForecastDate(j)}))
+    .filter(j=>j.forecastAmount>0);
+  const quotedJobs=(jobs||[]).filter(j=>j.status==='quoted'&&Number(j.quoteAmount)>0);
+  const weightedPipeline=quotedJobs.reduce((s,j)=>s+Number(j.quoteAmount||0),0)*0.4;
   let running=opening;
   const rows=[];
   for(let n=0;n<monthCount;n++){
     const d=new Date(start.getFullYear(),start.getMonth()+n,1);
     const ms=d.toISOString().slice(0,7);
     const next=new Date(d.getFullYear(),d.getMonth()+1,1).toISOString().slice(0,10);
-    const receipts=recs.filter(e=>e.due&&e.due>=ms+'-01'&&e.due<next).reduce((s,e)=>s+Number(e.balanceDue||e.amount||0),0);
+    const invoiceReceipts=recs.filter(e=>e.due&&e.due>=ms+'-01'&&e.due<next).reduce((s,e)=>s+Number(e.balanceDue||e.amount||0),0);
+    const bookedReceipts=bookedJobs.filter(j=>j.forecastDate&&j.forecastDate>=ms+'-01'&&j.forecastDate<next).reduce((s,j)=>s+Number(j.forecastAmount||0),0);
+    const receipts=invoiceReceipts+bookedReceipts;
     const supplierPayments=bills.filter(i=>{const due=cashSupplierForecastDate(i);return due>=ms+'-01'&&due<next;}).reduce((s,i)=>s+Number(i.balanceDue||0),0);
     const net=receipts-supplierPayments-oh;
     if(running!=null) running+=net;
-    rows.push({ms,label:d.toLocaleDateString('en-AU',{month:'short',year:'numeric'}),receipts,supplierPayments,overheads:oh,net,closing:running,risk:running!=null&&running<0});
+    rows.push({ms,label:d.toLocaleDateString('en-AU',{month:'short',year:'numeric'}),receipts,invoiceReceipts,bookedReceipts,supplierPayments,overheads:oh,net,closing:running,risk:running!=null&&running<0});
   }
-  return {rows,opening,generatedAt:new Date().toISOString()};
+  return {rows,opening,bookedJobs,bookedTotal:bookedJobs.reduce((s,j)=>s+Number(j.forecastAmount||0),0),quotedTotal:quotedJobs.reduce((s,j)=>s+Number(j.quoteAmount||0),0),weightedPipeline,generatedAt:new Date().toISOString()};
 }
 function saveMonthlyForecastSnapshot(forecast){
   try{ const key=today().slice(0,7), s=STORE.get('cashForecastSnapshots')||{version:1,snapshots:{}}; s.snapshots[key]=forecast; STORE.set('cashForecastSnapshots',s); }catch(e){}
@@ -8668,14 +8681,20 @@ function renderMonthlyCashForecast(forecast){
   const rows=forecast.rows||[], hasOpening=forecast.opening!=null;
   const ending=rows.length?rows[rows.length-1].closing:null;
   const risk=rows.some(r=>r.risk);
+  const bookedTotal=Number(forecast.bookedTotal||0), quotedTotal=Number(forecast.quotedTotal||0), weightedPipeline=Number(forecast.weightedPipeline||0);
   return `<div style="background:#fff;border:1px solid #e2e8f0;border-radius:12px;padding:20px 24px;margin-bottom:20px">
     <div style="display:flex;justify-content:space-between;align-items:baseline;gap:10px;flex-wrap:wrap;margin-bottom:4px"><div style="font-size:14px;font-weight:700;color:#0f172a">Monthly Cash-Flow Forecast</div><div style="font-size:11px;color:#94a3b8">Auto-refreshed ${fmtD(today())} · next ${rows.length} months</div></div>
-    <div style="font-size:11px;color:#64748b;margin-bottom:14px">Expected receipts are scheduled by customer due date. Supplier payments use approved unpaid commitments, recorded supplier due dates, or invoice date + 7 days where no due date is recorded. Recurring overheads are included separately.</div>
+    <div style="font-size:11px;color:#64748b;margin-bottom:14px">Expected receipts are scheduled by customer due date. Booked jobs use their scheduled date plus payment terms. Supplier payments use approved unpaid commitments, recorded supplier due dates, or invoice date + 7 days where no due date is recorded. Recurring overheads are included separately.</div>
+    <div class="cash-forecast-buckets" style="display:grid;grid-template-columns:repeat(3,1fr);gap:9px;margin-bottom:14px">
+      <div style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:8px;padding:10px 12px"><div style="font-size:10px;color:#1d4ed8;font-weight:800;text-transform:uppercase">Booked upcoming jobs</div><div style="font-size:19px;font-weight:900;color:#1e3a5f;margin-top:3px">${fmt$(bookedTotal)}</div><div style="font-size:10px;color:#64748b">scheduled jobs not yet invoiced</div></div>
+      <div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;padding:10px 12px"><div style="font-size:10px;color:#15803d;font-weight:800;text-transform:uppercase">Quoted pipeline</div><div style="font-size:19px;font-weight:900;color:#166534;margin-top:3px">${fmt$(quotedTotal)}</div><div style="font-size:10px;color:#64748b">quoted, not yet booked</div></div>
+      <div style="background:#fefce8;border:1px solid #fde68a;border-radius:8px;padding:10px 12px"><div style="font-size:10px;color:#a16207;font-weight:800;text-transform:uppercase">Weighted pipeline</div><div style="font-size:19px;font-weight:900;color:#92400e;margin-top:3px">${fmt$(weightedPipeline)}</div><div style="font-size:10px;color:#64748b">40% planning estimate, excluded from dated rows</div></div>
+    </div>
     ${!hasOpening?`<div style="background:#fffbeb;border:1px solid #fcd34d;border-radius:8px;padding:10px 12px;font-size:11px;color:#92400e;margin-bottom:12px"><strong>Forecast closing balances unavailable.</strong> Save the cleared bank balance in Cash Control to turn the movement forecast into projected bank balances.</div>`:''}
     ${risk?`<div style="background:#fff1f2;border:1px solid #fecdd3;border-radius:8px;padding:10px 12px;font-size:11px;color:#9f1239;margin-bottom:12px"><strong>Projected cash pressure detected.</strong> At least one projected month falls below $0 based on current due dates and commitments.</div>`:''}
-    <div style="overflow-x:auto"><div style="min-width:700px;display:grid;grid-template-columns:110px repeat(5,1fr);gap:0;border:1px solid #f1f5f9;border-radius:8px;overflow:hidden">
-      <div style="padding:9px 10px;background:#f8fafc;font-size:10px;font-weight:800;color:#64748b;text-transform:uppercase">Month</div><div style="padding:9px 10px;background:#f8fafc;font-size:10px;font-weight:800;color:#64748b;text-align:right">Receipts</div><div style="padding:9px 10px;background:#f8fafc;font-size:10px;font-weight:800;color:#64748b;text-align:right">Supplier payments</div><div style="padding:9px 10px;background:#f8fafc;font-size:10px;font-weight:800;color:#64748b;text-align:right">Overheads</div><div style="padding:9px 10px;background:#f8fafc;font-size:10px;font-weight:800;color:#64748b;text-align:right">Net movement</div><div style="padding:9px 10px;background:#f8fafc;font-size:10px;font-weight:800;color:#64748b;text-align:right">Projected close</div>
-      ${rows.map(r=>`<div style="padding:10px;border-top:1px solid #f1f5f9;font-size:12px;font-weight:700;color:#0f172a">${esc(r.label)}${r.risk?' ⚠':''}</div><div style="padding:10px;border-top:1px solid #f1f5f9;text-align:right;font-size:12px;color:#059669">${fmt$(r.receipts)}</div><div style="padding:10px;border-top:1px solid #f1f5f9;text-align:right;font-size:12px;color:#dc2626">−${fmt$(r.supplierPayments)}</div><div style="padding:10px;border-top:1px solid #f1f5f9;text-align:right;font-size:12px;color:#f97316">−${fmt$(r.overheads)}</div><div style="padding:10px;border-top:1px solid #f1f5f9;text-align:right;font-size:12px;font-weight:800;color:${r.net>=0?'#059669':'#dc2626'}">${r.net<0?'−':''}${fmt$(Math.abs(r.net))}</div><div style="padding:10px;border-top:1px solid #f1f5f9;text-align:right;font-size:12px;font-weight:800;color:${r.closing==null?'#94a3b8':r.closing<0?'#dc2626':'#0f172a'}">${r.closing==null?'—':fmt$(r.closing)}</div>`).join('')}
+    <div style="overflow-x:auto"><div style="min-width:850px;display:grid;grid-template-columns:110px repeat(6,1fr);gap:0;border:1px solid #f1f5f9;border-radius:8px;overflow:hidden">
+      <div style="padding:9px 10px;background:#f8fafc;font-size:10px;font-weight:800;color:#64748b;text-transform:uppercase">Month</div><div style="padding:9px 10px;background:#f8fafc;font-size:10px;font-weight:800;color:#64748b;text-align:right">Invoiced receipts</div><div style="padding:9px 10px;background:#f8fafc;font-size:10px;font-weight:800;color:#64748b;text-align:right">Booked jobs</div><div style="padding:9px 10px;background:#f8fafc;font-size:10px;font-weight:800;color:#64748b;text-align:right">Supplier payments</div><div style="padding:9px 10px;background:#f8fafc;font-size:10px;font-weight:800;color:#64748b;text-align:right">Overheads</div><div style="padding:9px 10px;background:#f8fafc;font-size:10px;font-weight:800;color:#64748b;text-align:right">Net movement</div><div style="padding:9px 10px;background:#f8fafc;font-size:10px;font-weight:800;color:#64748b;text-align:right">Projected close</div>
+      ${rows.map(r=>`<div style="padding:10px;border-top:1px solid #f1f5f9;font-size:12px;font-weight:700;color:#0f172a">${esc(r.label)}${r.risk?' ⚠':''}</div><div style="padding:10px;border-top:1px solid #f1f5f9;text-align:right;font-size:12px;color:#059669">${fmt$(r.invoiceReceipts||0)}</div><div style="padding:10px;border-top:1px solid #f1f5f9;text-align:right;font-size:12px;color:#2563eb">${fmt$(r.bookedReceipts||0)}</div><div style="padding:10px;border-top:1px solid #f1f5f9;text-align:right;font-size:12px;color:#dc2626">−${fmt$(r.supplierPayments)}</div><div style="padding:10px;border-top:1px solid #f1f5f9;text-align:right;font-size:12px;color:#f97316">−${fmt$(r.overheads)}</div><div style="padding:10px;border-top:1px solid #f1f5f9;text-align:right;font-size:12px;font-weight:800;color:${r.net>=0?'#059669':'#dc2626'}">${r.net<0?'−':''}${fmt$(Math.abs(r.net))}</div><div style="padding:10px;border-top:1px solid #f1f5f9;text-align:right;font-size:12px;font-weight:800;color:${r.closing==null?'#94a3b8':r.closing<0?'#dc2626':'#0f172a'}">${r.closing==null?'—':fmt$(r.closing)}</div>`).join('')}
     </div></div>
     <div style="font-size:11px;color:#64748b;margin-top:11px">${hasOpening?`Opening cleared balance ${fmt$(forecast.opening)} · projected close after ${rows.length} months ${fmt$(ending)}`:'Set the opening cleared balance in Cash Control for closing-balance projections.'} · This is a management forecast, not a guarantee of payment timing.</div>
   </div>`;
