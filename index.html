@@ -1212,7 +1212,7 @@ const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZ
 
 // v32 integrity foundation: every cloud sync is now auditable per dataset.
 const SYNC_SCHEMA_VERSION = 'v32-integrity-1';
-const SYNC_DATA_KEYS = ['clients','jobs','projects','leads','counters','kmlog','expenses','taxman','cfg','partsdb','timesheets','recurring','supInvoices'];
+const SYNC_DATA_KEYS = ['clients','jobs','projects','leads','counters','kmlog','expenses','taxman','cfg','partsdb','timesheets','recurring','supInvoices','financialLedger','cashControl'];
 
 const SB_HEADERS = {
   'apikey': SUPABASE_KEY,
@@ -1305,6 +1305,8 @@ function _datasetValue(k){
   if(k==='timesheets') return timesheets;
   if(k==='recurring') return recurringJobs;
   if(k==='supInvoices') return (window._supInvoices||[]).map(i=>{const c={...i};delete c._fileObj;return c;});
+  if(k==='financialLedger') return STORE.get('financialLedger') || {version:1,events:[],periods:{}};
+  if(k==='cashControl') return STORE.get('cashControl') || {};
   return STORE.get(k);
 }
 function _buildSyncManifest(savedAt){
@@ -1881,6 +1883,14 @@ function _applySbData(sbData){
   if (sbData.projects)  { projects  = sbData.projects;   STORE.set('projects',  projects); }
   if (sbData.timesheets){ timesheets = sbData.timesheets; localStorage.setItem('sac:timesheets', JSON.stringify(timesheets)); }
   if (sbData.recurring) { recurringJobs = sbData.recurring; localStorage.setItem('sac:recurring', JSON.stringify(recurringJobs)); }
+  if (sbData.financialLedger) {
+    const localLedger=STORE.get('financialLedger')||{version:1,events:[],periods:{}};
+    const cloudLedger=sbData.financialLedger||{version:1,events:[],periods:{}};
+    const mergedEvents=_mergeRecords(localLedger.events||[],cloudLedger.events||[]);
+    const mergedPeriods={...(localLedger.periods||{}),...(cloudLedger.periods||{})};
+    STORE.set('financialLedger',{version:1,events:mergedEvents,periods:mergedPeriods});
+  }
+  if (sbData.cashControl) { STORE.set('cashControl', sbData.cashControl); }
   if (sbData.savedAt)   { STORE.set('savedAt', String(sbData.savedAt)); }
   if (sbData.syncManifest) { STORE.set('syncManifest', sbData.syncManifest); }
   // Auto-fix overdue statuses after loading
@@ -1902,6 +1912,11 @@ async function _pushToSupabase(){
   window._allowForcePushOnce = false;
   // Merge append-only logs by stable id so a phone trip cannot be erased by a laptop snapshot.
   if(Array.isArray(cloudBefore?.kmlog)) kmLog = _mergeRecords(kmLog, cloudBefore.kmlog);
+  if(cloudBefore?.financialLedger){
+    const localLedger=STORE.get('financialLedger')||{version:1,events:[],periods:{}};
+    const cloudLedger=cloudBefore.financialLedger||{version:1,events:[],periods:{}};
+    STORE.set('financialLedger',{version:1,events:_mergeRecords(localLedger.events||[],cloudLedger.events||[]),periods:{...(cloudLedger.periods||{}),...(localLedger.periods||{})}});
+  }
   const values={};
   SYNC_DATA_KEYS.forEach(k=>{ values[k]=_datasetValue(k); });
   const manifest=_buildSyncManifest(now);
