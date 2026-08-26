@@ -3009,9 +3009,9 @@ function calcTotalCosts(jobsList, dateFilter) {
 // reference/amount, and creates a missing invoice only when the job exists.
 function normalizeConfirmedValdisAllocations(){
   const allocations = {
-    'SAI_100067': {ref:'00000729', supplier:'Sharper Automation Pty Limited', amount:1788.46, date:'2026-05-26', costType:'parts', gstExempt:true, notes:'User-confirmed Valdis allocation: Sharper invoice #00000729; job was before GST registration.'},
-    'SAI_100070': {ref:'102', supplier:'J Lydement Electrical Pty Ltd', amount:660.00, date:'2026-05-26', costType:'labour', gstExempt:true, notes:'User-confirmed Valdis allocation: J Lydement invoice #102; job was before GST registration.'},
-    'SAI_100097': {ref:'163', supplier:'J Lydement Electrical Pty Ltd', amount:935.88, date:'2026-07-24', costType:'labour', gstExempt:false, notes:'User-confirmed Valdis allocation: J Lydement invoice #163; job was after GST registration.'},
+    'SAI_100067': {ref:'00000729', supplier:'Sharper Automation Pty Limited', amount:1788.46, date:'2026-05-26', costType:'parts', gstExempt:true, gstAmount:0, notes:'User-confirmed Valdis allocation: Sharper invoice #00000729; job was before GST registration.'},
+    'SAI_100070': {ref:'102', supplier:'J Lydement Electrical Pty Ltd', amount:660.00, date:'2026-05-26', costType:'labour', gstExempt:true, gstAmount:0, notes:'User-confirmed Valdis allocation: J Lydement invoice #102; job was before GST registration.'},
+    'SAI_100097': {ref:'163', supplier:'J Lydement Electrical Pty Ltd', amount:935.88, date:'2026-07-24', costType:'labour', gstExempt:false, gstAmount:85.08, notes:'User-confirmed Valdis allocation: J Lydement invoice #163; job was after GST registration.'},
   };
   let changed = false;
   Object.entries(allocations).forEach(([jobNumber, a])=>{
@@ -3022,11 +3022,11 @@ function normalizeConfirmedValdisAllocations(){
     let inv = (window._supInvoices||[]).find(i => i.jobId===j.id && String(i.ref||'').replace(/\D/g,'')===digits);
     if(!inv) inv = (window._supInvoices||[]).find(i => String(i.ref||'').replace(/\D/g,'')===digits && (!i.jobId || i.jobId===j.id));
     if(inv){
-      const before = JSON.stringify({jobId:inv.jobId,jobRef:inv.jobRef,ref:inv.ref,amount:inv.amount,supplier:inv.supplier,costType:inv.costType});
-      inv.jobId = j.id; inv.jobRef = jobNumber; inv.ref = a.ref; inv.amount = a.amount; inv.supplier = a.supplier; inv.supplierName = a.supplier; inv.costType = a.costType; inv.date = inv.date || a.date; inv.notes = inv.notes || a.notes;
-      if(before !== JSON.stringify({jobId:inv.jobId,jobRef:inv.jobRef,ref:inv.ref,amount:inv.amount,supplier:inv.supplier,costType:inv.costType})) changed = true;
+      const before = JSON.stringify({jobId:inv.jobId,jobRef:inv.jobRef,ref:inv.ref,amount:inv.amount,supplier:inv.supplier,costType:inv.costType,gstExempt:inv.gstExempt,gstAmount:inv.gstAmount});
+      inv.jobId = j.id; inv.jobRef = jobNumber; inv.ref = a.ref; inv.amount = a.amount; inv.supplier = a.supplier; inv.supplierName = a.supplier; inv.costType = a.costType; inv.gstExempt = a.gstExempt; inv.gstAmount = a.gstAmount; inv.date = inv.date || a.date; inv.notes = inv.notes || a.notes;
+      if(before !== JSON.stringify({jobId:inv.jobId,jobRef:inv.jobRef,ref:inv.ref,amount:inv.amount,supplier:inv.supplier,costType:inv.costType,gstExempt:inv.gstExempt,gstAmount:inv.gstAmount})) changed = true;
     } else {
-      (window._supInvoices||[]).push({id:'sinv_valdis_'+a.ref, jobId:j.id, jobRef:jobNumber, supplier:a.supplier, supplierName:a.supplier, ref:a.ref, date:a.date, amount:a.amount, costType:a.costType, notes:a.notes, createdAt:new Date().toISOString(), fileData:false});
+      (window._supInvoices||[]).push({id:'sinv_valdis_'+a.ref, jobId:j.id, jobRef:jobNumber, supplier:a.supplier, supplierName:a.supplier, ref:a.ref, date:a.date, amount:a.amount, costType:a.costType, notes:a.notes, createdAt:new Date().toISOString(), gstExempt:a.gstExempt, gstAmount:a.gstAmount, fileData:false});
       changed = true;
     }
   });
@@ -3039,10 +3039,10 @@ function normalizeConfirmedValdisAllocations(){
 // Idempotent: matches by invoice reference and never deletes existing records.
 function normalizeConfirmedAdditionalInvoiceAllocations(){
   const allocations = [
-    {jobNumber:'SAI_100104', ref:'0861', supplier:'Sharper Automation Pty Limited', amount:1645.50, date:'2026-08-22', costType:'parts', notes:'User-confirmed supplier invoice #0861 for SAI_100104.'},
-    {jobNumber:'SAI_100104', ref:'191', supplier:'J Lydement Electrical Pty Ltd', amount:1799.94, date:'2026-08-18', costType:'labour', notes:'User-confirmed labour invoice #191 for SAI_100104; invoice includes labour and materials.'},
-    {jobNumber:'SAI_100105', ref:'0873', supplier:'Sharper Automation Pty Limited', amount:1063.92, date:'2026-08-22', costType:'parts', notes:'User-confirmed supplier invoice #0873 for SAI_100105.'},
-    {jobNumber:'SAI_100103', ref:'0862', supplier:'Sharper Automation Pty Limited', amount:12912.03, date:'2026-08-22', costType:'parts', notes:'User-confirmed supplier invoice #0862 for SAI_100103.'},
+    {jobNumber:'SAI_100104', ref:'0861', supplier:'Sharper Automation Pty Limited', amount:1645.50, gstAmount:149.59, date:'2026-08-22', costType:'parts', notes:'User-confirmed supplier invoice #0861 for SAI_100104.'},
+    {jobNumber:'SAI_100104', ref:'191', supplier:'J Lydement Electrical Pty Ltd', amount:1799.94, gstAmount:163.63, date:'2026-08-18', costType:'labour', notes:'User-confirmed labour invoice #191 for SAI_100104; invoice includes labour and materials.'},
+    {jobNumber:'SAI_100105', ref:'0873', supplier:'Sharper Automation Pty Limited', amount:1063.92, gstAmount:96.72, date:'2026-08-22', costType:'parts', notes:'User-confirmed supplier invoice #0873 for SAI_100105.'},
+    {jobNumber:'SAI_100103', ref:'0862', supplier:'Sharper Automation Pty Limited', amount:12912.03, gstAmount:1173.82, date:'2026-08-22', costType:'parts', notes:'User-confirmed supplier invoice #0862 for SAI_100103.'},
   ];
   let changed = false;
   allocations.forEach(a=>{
@@ -3051,11 +3051,11 @@ function normalizeConfirmedAdditionalInvoiceAllocations(){
     const digits = String(a.ref).replace(/\D/g,'');
     let inv = (window._supInvoices||[]).find(i=>String(i.ref||'').replace(/\D/g,'')===digits && (!i.jobId || i.jobId===j.id));
     if(inv){
-      const before = JSON.stringify({jobId:inv.jobId,jobRef:inv.jobRef,ref:inv.ref,amount:inv.amount,supplier:inv.supplier,costType:inv.costType});
-      inv.jobId=j.id; inv.jobRef=a.jobNumber; inv.ref=a.ref; inv.amount=a.amount; inv.supplier=a.supplier; inv.supplierName=a.supplier; inv.costType=a.costType; inv.date=inv.date||a.date; inv.notes=inv.notes||a.notes;
-      if(before!==JSON.stringify({jobId:inv.jobId,jobRef:inv.jobRef,ref:inv.ref,amount:inv.amount,supplier:inv.supplier,costType:inv.costType})) changed=true;
+      const before = JSON.stringify({jobId:inv.jobId,jobRef:inv.jobRef,ref:inv.ref,amount:inv.amount,supplier:inv.supplier,costType:inv.costType,gstExempt:inv.gstExempt,gstAmount:inv.gstAmount});
+      inv.jobId=j.id; inv.jobRef=a.jobNumber; inv.ref=a.ref; inv.amount=a.amount; inv.supplier=a.supplier; inv.supplierName=a.supplier; inv.costType=a.costType; inv.gstAmount=a.gstAmount; inv.date=inv.date||a.date; inv.notes=inv.notes||a.notes;
+      if(before!==JSON.stringify({jobId:inv.jobId,jobRef:inv.jobRef,ref:inv.ref,amount:inv.amount,supplier:inv.supplier,costType:inv.costType,gstExempt:inv.gstExempt,gstAmount:inv.gstAmount})) changed=true;
     } else {
-      (window._supInvoices||[]).push({id:'sinv_confirmed_'+a.ref,jobId:j.id,jobRef:a.jobNumber,supplier:a.supplier,supplierName:a.supplier,ref:a.ref,date:a.date,amount:a.amount,costType:a.costType,notes:a.notes,createdAt:new Date().toISOString(),fileData:false});
+      (window._supInvoices||[]).push({id:'sinv_confirmed_'+a.ref,jobId:j.id,jobRef:a.jobNumber,supplier:a.supplier,supplierName:a.supplier,ref:a.ref,date:a.date,amount:a.amount,costType:a.costType,gstExempt:false,gstAmount:a.gstAmount,notes:a.notes,createdAt:new Date().toISOString(),fileData:false});
       changed=true;
     }
   });
@@ -14420,18 +14420,54 @@ function renderProfitability(){
   const billableHrs   = 1000; // conservative estimate — adjust in future
   const costPerHour   = annualCost > 0 ? annualCost / billableHrs : 0;
 
+  // Collapse legacy and user-confirmed copies of the same supplier invoice for
+  // calculations while leaving both historical rows visible in the invoice page.
+  const dedupeSupplierInvoices = (list) => {
+    const invoiceJobKey = inv => {
+      const linked = jobs.find(j => j.id===inv.jobId || j.id===inv.jobRef || j.jobNumber===inv.jobRef);
+      return linked ? linked.jobNumber : (inv.jobRef || inv.jobId || '');
+    };
+    const out = [];
+    (list||[]).forEach(inv => {
+      const refDigits = String(inv.ref||'').replace(/\D/g,'');
+      const jobKey = invoiceJobKey(inv);
+      const supplierKey = String(inv.supplier||inv.supplierName||'').toLowerCase().replace(/[^a-z0-9]/g,'');
+      const duplicate = refDigits && out.find(prev => {
+        const prevDigits = String(prev.ref||'').replace(/\D/g,'');
+        const prevJob = invoiceJobKey(prev);
+        return prevDigits && prevDigits===refDigits && prevJob===jobKey && Math.abs(Number(prev.amount||0)-Number(inv.amount||0))<=0.05;
+      });
+      if (!duplicate) out.push(inv);
+      else {
+        const invPreferred = /user-confirmed|fileName/i.test(String(inv.notes||'')+' '+String(inv.fileName||''));
+        const prevPreferred = /user-confirmed|fileName/i.test(String(duplicate.notes||'')+' '+String(duplicate.fileName||''));
+        if (invPreferred && !prevPreferred) out[out.indexOf(duplicate)] = inv;
+      }
+    });
+    return out;
+  };
+  // Customer GST cutover is tracked on jobs: SAI_100090 was the first
+  // customer invoice with GST. Supplier invoices are different: every supplier
+  // invoice supplied by the user includes GST, including pre-registration jobs.
+  // Use an explicit invoice GST amount when available; otherwise derive the
+  // GST component from the GST-inclusive supplier total.
+  const supplierInvoiceGst = (inv) => {
+    if (inv.gstAmount != null && inv.gstAmount !== '') return Number(inv.gstAmount)||0;
+    return Number(inv.amount||0) / 11;
+  };
+
   const getJobCost = (j) => {
     // Source 1: Materials (parts) — actualPartsCost, else parts-only linked
     // invoices, else DB parts list. Labour-type invoices are excluded here so
     // subcontractor labour is NOT double-counted (it's added as subLabour below).
-    const supInvs = (window._supInvoices||[]).filter(function(inv){
+    const supInvs = dedupeSupplierInvoices((window._supInvoices||[]).filter(function(inv){
       if(!inv.supplier && inv.supplierName) inv.supplier = inv.supplierName;
       if(!inv.costType){
         var sn = (inv.supplier||inv.supplierName||'').toLowerCase();
         inv.costType = (sn.indexOf('electrical')>=0||sn.indexOf('electric')>=0||sn.indexOf('lydement')>=0||sn.indexOf('labour')>=0) ? 'labour' : 'parts';
       }
       return inv.jobId === j.id || inv.jobRef === j.jobNumber;
-    });
+    }));
     let partsCost = 0;
     // For jobs with confirmed invoice allocations, linked invoices are the
     // authoritative source. This prevents stale actualPartsCost snapshots from
@@ -14500,8 +14536,10 @@ function renderProfitability(){
   // Treat an explicit paid marker as paid; otherwise show the invoice as an
   // unpaid commitment. This is intentionally separate from paid-job margin.
   const isSupplierInvoicePaid = inv => inv.paid === true || inv.paymentStatus === 'paid' || inv.status === 'paid';
-  const unpaidSupplierInvoices = (window._supInvoices||[]).filter(inv => !isSupplierInvoicePaid(inv));
+  const activeSupplierInvoices = dedupeSupplierInvoices(window._supInvoices||[]);
+  const unpaidSupplierInvoices = activeSupplierInvoices.filter(inv => !isSupplierInvoicePaid(inv));
   const unpaidSupplierTotal = unpaidSupplierInvoices.reduce((s,inv)=>s+Number(inv.amount||0),0);
+  const unpaidSupplierGst = unpaidSupplierInvoices.reduce((s,inv)=>s+supplierInvoiceGst(inv),0);
   const unpaidLinkedToPaidJobs = unpaidSupplierInvoices.filter(inv => paidJobs.some(j=>inv.jobId===j.id || inv.jobRef===j.jobNumber));
   const unpaidLinkedToPaidJobsTotal = unpaidLinkedToPaidJobs.reduce((s,inv)=>s+Number(inv.amount||0),0);
   const unpaidOtherTotal = unpaidSupplierTotal - unpaidLinkedToPaidJobsTotal;
@@ -14568,7 +14606,7 @@ function renderProfitability(){
       <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px">
         <div style="background:#fff;border-radius:8px;padding:10px 12px"><div style="font-size:10px;font-weight:700;color:#64748b;text-transform:uppercase">Paid-job revenue</div><div style="font-size:17px;font-weight:800;color:#059669">${fmt$(totalRevenue)}</div></div>
         <div style="background:#fff;border-radius:8px;padding:10px 12px"><div style="font-size:10px;font-weight:700;color:#64748b;text-transform:uppercase">Paid-job costs</div><div style="font-size:17px;font-weight:800;color:#dc2626">${fmt$(totalCost)}</div></div>
-        <div style="background:#fff;border-radius:8px;padding:10px 12px"><div style="font-size:10px;font-weight:700;color:#64748b;text-transform:uppercase">Unpaid supplier commitments</div><div style="font-size:17px;font-weight:800;color:#b45309">${fmt$(unpaidSupplierTotal)}</div><div style="font-size:10px;color:#92400e">${unpaidSupplierInvoices.length} invoice${unpaidSupplierInvoices.length===1?'':'s'} · ${fmt$(unpaidLinkedToPaidJobsTotal)} linked to paid jobs</div></div>
+        <div style="background:#fff;border-radius:8px;padding:10px 12px"><div style="font-size:10px;font-weight:700;color:#64748b;text-transform:uppercase">Unpaid supplier commitments</div><div style="font-size:17px;font-weight:800;color:#b45309">${fmt$(unpaidSupplierTotal)}</div><div style="font-size:10px;color:#92400e">${unpaidSupplierInvoices.length} invoice${unpaidSupplierInvoices.length===1?'':'s'} · ${fmt$(unpaidLinkedToPaidJobsTotal)} linked to paid jobs · GST component ${fmt$(unpaidSupplierGst)}</div></div>
       </div>
       ${unpaidOtherTotal>0?`<div style="font-size:10px;color:#92400e;margin-top:8px">Additional unpaid supplier commitments outside paid jobs: ${fmt$(unpaidOtherTotal)}.</div>`:''}
     </div>
