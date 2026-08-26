@@ -2804,6 +2804,9 @@ function renderNav(){
   const overdue = jobs.filter(j=>['invoiced','overdue'].includes(j.status)&&j.invoiceDue&&new Date(j.invoiceDue+'T00:00:00')<new Date()).length;
   const awaitPO = jobs.filter(j=>j.status==='quoted'&&!j.poNumber).length;
   const balDue  = getBalanceDueJobs().length;
+  // Keep the sidebar Jobs badge aligned with the Jobs Pipeline's live definition.
+  // Lead records are shown in Leads; paid and lost jobs are no longer active.
+  const liveJobs = jobs.filter(j=>!['paid','lost','lead'].includes(j.status)).length;
   const newLeads = (typeof websiteLeads!=='undefined') ? websiteLeads.filter(l=>l.status==='new').length : 0;
   const _verBadge = '<div style="margin:0 8px 12px;padding:6px 10px;background:rgba(245,158,11,0.15);border:1px solid rgba(245,158,11,0.4);border-radius:8px;font-size:11px;font-weight:800;color:#f59e0b;text-align:center;letter-spacing:0.3px">v31 · Quotes + Excel Import</div>';
   document.getElementById('nav').innerHTML = _verBadge + NAV_ITEMS.map(n=>`
@@ -2815,7 +2818,8 @@ function renderNav(){
       ${n.id==='inbox'?`<span id="agent-inbox-badge" style="margin-left:auto;background:#ef4444;color:#fff;border-radius:10px;font-size:11px;font-weight:700;padding:2px 8px;display:none"></span>`:''}
       ${n.id==='aitools'?`<span style="margin-left:auto;width:8px;height:8px;border-radius:50%;background:${getActiveKey()?'#10b981':'#ef4444'};flex-shrink:0" title="${getActiveKey()?'AI ready ('+getAIProvider()+')':'No API key — click Settings'}"></span>`:''}
       ${n.id==='quotes'?(()=>{const qc=jobs.filter(j=>j.type==='SAQ'&&!['paid','lost'].includes(j.status)).length;return qc?`<span style="margin-left:auto;background:#6366f1;color:#fff;border-radius:10px;font-size:11px;font-weight:700;padding:2px 8px">${qc}</span>`:'';})():''}
-      ${n.id==='jobs'&&balDue?`<span style="margin-left:auto;background:#f59e0b;color:#fff;border-radius:10px;font-size:11px;font-weight:700;padding:2px 8px">💰${balDue}</span>`:''}
+      ${n.id==='jobs'&&liveJobs?`<span title="${liveJobs} live jobs in the active pipeline" style="margin-left:auto;background:#6366f1;color:#fff;border-radius:10px;font-size:11px;font-weight:700;padding:2px 8px">${liveJobs}</span>`:''}
+      ${n.id==='jobs'&&balDue?`<span title="${balDue} jobs with a balance due" style="margin-left:4px;background:#f59e0b;color:#fff;border-radius:10px;font-size:11px;font-weight:700;padding:2px 8px">💰${balDue}</span>`:''}
       ${n.id==='comms'&&newLeads?`<span style="margin-left:auto;background:#10b981;color:#fff;border-radius:10px;font-size:11px;font-weight:700;padding:2px 8px">🌐${newLeads}</span>`:''}
     </button>`).join('');
 }
