@@ -38,6 +38,22 @@ valdis_allocations = {
     'SAI_100070': {'ref':'102', 'supplier':'J Lydement Electrical Pty Ltd', 'amount':660.00, 'gstExempt':True, 'costType':'labour'},
     'SAI_100097': {'ref':'163', 'supplier':'J Lydement Electrical Pty Ltd', 'amount':935.88, 'gstExempt':False, 'costType':'labour'},
 }
+new_invoice_allocations = {
+    'SAI_100104': [
+        {'ref':'0861', 'supplier':'Sharper Automation Pty Limited', 'amount':1645.50, 'costType':'parts'},
+        {'ref':'191', 'supplier':'J Lydement Electrical Pty Ltd', 'amount':1799.94, 'costType':'labour'},
+    ],
+    'SAI_100105': [{'ref':'0873', 'supplier':'Sharper Automation Pty Limited', 'amount':1063.92, 'costType':'parts'}],
+    'SAI_100103': [{'ref':'0862', 'supplier':'Sharper Automation Pty Limited', 'amount':12912.03, 'costType':'parts'}],
+}
+for job_number, invoice_list in new_invoice_allocations.items():
+    job = next((j for j in jobs if j.get('jobNumber') == job_number), None)
+    if not job: continue
+    for alloc in invoice_list:
+        digits = ''.join(ch for ch in alloc['ref'] if ch.isdigit())
+        inv = next((i for i in sup if i.get('jobId') == job.get('id') and ''.join(ch for ch in str(i.get('ref') or '') if ch.isdigit()) == digits), None)
+        if not inv: inv = {'id':'confirmed_sinv_'+alloc['ref'], 'jobId':job.get('id')}; sup.append(inv)
+        inv.update({'jobRef':job_number,'ref':alloc['ref'],'supplier':alloc['supplier'],'supplierName':alloc['supplier'],'amount':alloc['amount'],'costType':alloc['costType']})
 for job_number, alloc in valdis_allocations.items():
     job = next((j for j in jobs if j.get('jobNumber') == job_number), None)
     if not job: continue
