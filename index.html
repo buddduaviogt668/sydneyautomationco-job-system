@@ -2782,7 +2782,21 @@ function soleTraderPlanning(){
 function partYourCost(p){ return p && p.buyPrice ? p.buyPrice * (1 + CFG.supplierMargin) : 0; }
 function partSellPrice(p){ return partYourCost(p) / (1 - CFG.markup); }
 function qbSellPriceAt(p, m){ return partYourCost(p) / (1 - m); }
+const OVERHEAD_CATEGORIES=['Insurance & compliance','Software & subscriptions','Vehicle & travel','Communications','Professional & finance','Premises & utilities','Marketing & sales','Other'];
+function overheadCategory(o){
+  if(o&&OVERHEAD_CATEGORIES.includes(o.category)) return o.category;
+  const n=String(o?.name||'').toLowerCase();
+  if(/insurance|rego|licence|license|compliance/.test(n)) return 'Insurance & compliance';
+  if(/software|subscription|hosting|domain/.test(n)) return 'Software & subscriptions';
+  if(/vehicle|fuel|rego|travel|parking|km/.test(n)) return 'Vehicle & travel';
+  if(/phone|mobile|internet|telco|communication/.test(n)) return 'Communications';
+  if(/account|bookkeep|bank|interest|finance|legal/.test(n)) return 'Professional & finance';
+  if(/rent|premises|warehouse|office|electric|power|utility/.test(n)) return 'Premises & utilities';
+  if(/advert|marketing|website|lead/.test(n)) return 'Marketing & sales';
+  return 'Other';
+}
 function overheadMonthlyTotal(){ return CFG.overheads.reduce((s,o)=>s+(Number(o.monthly)||0),0); }
+function overheadCategoryTotals(){ return CFG.overheads.reduce((m,o)=>{ const c=overheadCategory(o); m[c]=(m[c]||0)+(Number(o.monthly)||0); return m; },{}); }
 function startupRecoveryPerJob(){ return CFG.startupItems.reduce((s,i)=>s+(i.recoverOver>=9999?0:(Number(i.total)||0)/(Number(i.recoverOver)||1)),0); }
 function jobsThisMonthCount(){
   if(CFG.jobsMonthOverride) return Math.max(1, Number(CFG.jobsMonthOverride));
@@ -8618,6 +8632,55 @@ function renderMonthlyReport(ms, forPrint){
   </div>`;
 }
 
+function cashSupplierForecastDate(i){
+  const direct=i?.dueDate||i?.paymentDueDate||i?.invoiceDue||i?.expectedPaymentDate||'';
+  if(direct) return direct;
+  const base=i?.date||i?.invoiceDate||'';
+  if(!base) return '';
+  const d=new Date(base+'T00:00:00'); d.setDate(d.getDate()+Number(i?.termsDays||7));
+  return d.toISOString().slice(0,10);
+}
+function monthlyCashForecast(monthCount=6){
+  const start=new Date(today().slice(0,7)+'-01T00:00:00');
+  const recs=typeof cashReceivables==='function'?cashReceivables():[];
+  const bills=typeof cashCommitments==='function'?cashCommitments():[];
+  const cfg=typeof cashControlConfig==='function'?cashControlConfig():{};
+  const opening=cfg.bankBalance!==''&&Number.isFinite(Number(cfg.bankBalance))?Number(cfg.bankBalance):null;
+  const oh=overheadMonthlyTotal();
+  let running=opening;
+  const rows=[];
+  for(let n=0;n<monthCount;n++){
+    const d=new Date(start.getFullYear(),start.getMonth()+n,1);
+    const ms=d.toISOString().slice(0,7);
+    const next=new Date(d.getFullYear(),d.getMonth()+1,1).toISOString().slice(0,10);
+    const receipts=recs.filter(e=>e.due&&e.due>=ms+'-01'&&e.due<next).reduce((s,e)=>s+Number(e.balanceDue||e.amount||0),0);
+    const supplierPayments=bills.filter(i=>{const due=cashSupplierForecastDate(i);return due>=ms+'-01'&&due<next;}).reduce((s,i)=>s+Number(i.balanceDue||0),0);
+    const net=receipts-supplierPayments-oh;
+    if(running!=null) running+=net;
+    rows.push({ms,label:d.toLocaleDateString('en-AU',{month:'short',year:'numeric'}),receipts,supplierPayments,overheads:oh,net,closing:running,risk:running!=null&&running<0});
+  }
+  return {rows,opening,generatedAt:new Date().toISOString()};
+}
+function saveMonthlyForecastSnapshot(forecast){
+  try{ const key=today().slice(0,7), s=STORE.get('cashForecastSnapshots')||{version:1,snapshots:{}}; s.snapshots[key]=forecast; STORE.set('cashForecastSnapshots',s); }catch(e){}
+}
+function renderMonthlyCashForecast(forecast){
+  const rows=forecast.rows||[], hasOpening=forecast.opening!=null;
+  const ending=rows.length?rows[rows.length-1].closing:null;
+  const risk=rows.some(r=>r.risk);
+  return `<div style="background:#fff;border:1px solid #e2e8f0;border-radius:12px;padding:20px 24px;margin-bottom:20px">
+    <div style="display:flex;justify-content:space-between;align-items:baseline;gap:10px;flex-wrap:wrap;margin-bottom:4px"><div style="font-size:14px;font-weight:700;color:#0f172a">Monthly Cash-Flow Forecast</div><div style="font-size:11px;color:#94a3b8">Auto-refreshed ${fmtD(today())} · next ${rows.length} months</div></div>
+    <div style="font-size:11px;color:#64748b;margin-bottom:14px">Expected receipts are scheduled by customer due date. Supplier payments use approved unpaid commitments, recorded supplier due dates, or invoice date + 7 days where no due date is recorded. Recurring overheads are included separately.</div>
+    ${!hasOpening?`<div style="background:#fffbeb;border:1px solid #fcd34d;border-radius:8px;padding:10px 12px;font-size:11px;color:#92400e;margin-bottom:12px"><strong>Forecast closing balances unavailable.</strong> Save the cleared bank balance in Cash Control to turn the movement forecast into projected bank balances.</div>`:''}
+    ${risk?`<div style="background:#fff1f2;border:1px solid #fecdd3;border-radius:8px;padding:10px 12px;font-size:11px;color:#9f1239;margin-bottom:12px"><strong>Projected cash pressure detected.</strong> At least one projected month falls below $0 based on current due dates and commitments.</div>`:''}
+    <div style="overflow-x:auto"><div style="min-width:700px;display:grid;grid-template-columns:110px repeat(5,1fr);gap:0;border:1px solid #f1f5f9;border-radius:8px;overflow:hidden">
+      <div style="padding:9px 10px;background:#f8fafc;font-size:10px;font-weight:800;color:#64748b;text-transform:uppercase">Month</div><div style="padding:9px 10px;background:#f8fafc;font-size:10px;font-weight:800;color:#64748b;text-align:right">Receipts</div><div style="padding:9px 10px;background:#f8fafc;font-size:10px;font-weight:800;color:#64748b;text-align:right">Supplier payments</div><div style="padding:9px 10px;background:#f8fafc;font-size:10px;font-weight:800;color:#64748b;text-align:right">Overheads</div><div style="padding:9px 10px;background:#f8fafc;font-size:10px;font-weight:800;color:#64748b;text-align:right">Net movement</div><div style="padding:9px 10px;background:#f8fafc;font-size:10px;font-weight:800;color:#64748b;text-align:right">Projected close</div>
+      ${rows.map(r=>`<div style="padding:10px;border-top:1px solid #f1f5f9;font-size:12px;font-weight:700;color:#0f172a">${esc(r.label)}${r.risk?' ⚠':''}</div><div style="padding:10px;border-top:1px solid #f1f5f9;text-align:right;font-size:12px;color:#059669">${fmt$(r.receipts)}</div><div style="padding:10px;border-top:1px solid #f1f5f9;text-align:right;font-size:12px;color:#dc2626">−${fmt$(r.supplierPayments)}</div><div style="padding:10px;border-top:1px solid #f1f5f9;text-align:right;font-size:12px;color:#f97316">−${fmt$(r.overheads)}</div><div style="padding:10px;border-top:1px solid #f1f5f9;text-align:right;font-size:12px;font-weight:800;color:${r.net>=0?'#059669':'#dc2626'}">${r.net<0?'−':''}${fmt$(Math.abs(r.net))}</div><div style="padding:10px;border-top:1px solid #f1f5f9;text-align:right;font-size:12px;font-weight:800;color:${r.closing==null?'#94a3b8':r.closing<0?'#dc2626':'#0f172a'}">${r.closing==null?'—':fmt$(r.closing)}</div>`).join('')}
+    </div></div>
+    <div style="font-size:11px;color:#64748b;margin-top:11px">${hasOpening?`Opening cleared balance ${fmt$(forecast.opening)} · projected close after ${rows.length} months ${fmt$(ending)}`:'Set the opening cleared balance in Cash Control for closing-balance projections.'} · This is a management forecast, not a guarantee of payment timing.</div>
+  </div>`;
+}
+
 function renderFinancials(){
   window._finBasis = window._finBasis || 'paid';
   const todayStr=today();
@@ -8625,6 +8688,9 @@ function renderFinancials(){
   const thisYear=now.getFullYear();
   const thisMonth=now.getMonth();
   const reportMs = window._finMonth || todayStr.slice(0,7);
+  const overheadCats = overheadCategoryTotals();
+  const monthlyForecast = monthlyCashForecast(6);
+  saveMonthlyForecastSnapshot(monthlyForecast);
 
   // Australian Financial Year: Jul 1 – Jun 30
   // If we're Jan–Jun, FY started last July; if Jul–Dec, FY started this July
@@ -8848,6 +8914,7 @@ function renderFinancials(){
     </div>
 
     ${renderMonthlyReport(reportMs)}
+    ${renderMonthlyCashForecast(monthlyForecast)}
 
     <!-- ── BUSINESS INTELLIGENCE CARDS ── -->
     <div style="display:flex;gap:16px;margin-bottom:24px;flex-wrap:wrap">
@@ -8972,7 +9039,7 @@ function renderFinancials(){
     <!-- CHARTS ROW -->
     <div class="financial-charts-row" style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:20px">
 
-      <!-- BAR CHART: Monthly Revenue vs Take-Home -->
+      <!-- BAR CHART: Monthly Revenue vs Timing-Adjusted Result -->
       <div style="background:#fff;border-radius:12px;border:1px solid #e2e8f0;padding:20px 24px">
         <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:2px">
           <div style="font-size:14px;font-weight:700;color:#0f172a">Revenue vs Timing-Adjusted Result</div>
@@ -8998,6 +9065,25 @@ function renderFinancials(){
           <canvas id="chart-pie" width="180" height="180" style="flex-shrink:0;width:180px;height:180px"></canvas>
           <div id="pie-legend" style="flex:1"></div>
         </div>
+      </div>
+    </div>
+
+    <!-- OVERHEAD CATEGORY BREAKDOWN -->
+    <div style="background:#fff;border-radius:12px;border:1px solid #e2e8f0;padding:20px 24px;margin-bottom:20px">
+      <div style="display:flex;justify-content:space-between;align-items:baseline;gap:10px;flex-wrap:wrap;margin-bottom:4px">
+        <div style="font-size:14px;font-weight:700;color:#0f172a">Overhead Categories</div>
+        <div style="font-size:11px;color:#94a3b8">${fmt$(overheadMonthlyTotal())}/month · edit in Settings</div>
+      </div>
+      <div style="font-size:11px;color:#64748b;margin-bottom:14px">Recurring operating costs only. Supplier parts and labour remain separate job commitments.</div>
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:9px">
+        ${OVERHEAD_CATEGORIES.map(c=>{
+          const v=Number(overheadCats[c]||0), pct=overheadMonthlyTotal()>0?Math.round(v/overheadMonthlyTotal()*100):0;
+          return `<div style="background:#f8fafc;border-radius:9px;padding:11px 13px;border:1px solid #f1f5f9">
+            <div style="display:flex;justify-content:space-between;gap:8px;align-items:center"><span style="font-size:11px;color:#475569;font-weight:700">${esc(c)}</span><strong style="font-size:13px;color:#0f172a">${fmt$(v)}</strong></div>
+            <div style="height:5px;background:#e2e8f0;border-radius:4px;margin-top:8px;overflow:hidden"><div style="height:5px;background:#6366f1;border-radius:4px;width:${pct}%"></div></div>
+            <div style="font-size:10px;color:#94a3b8;margin-top:4px">${pct}% of recurring overheads</div>
+          </div>`;
+        }).join('')}
       </div>
     </div>
 
@@ -16049,12 +16135,14 @@ function renderSettings(){
         <div style="font-size:13px;color:#64748b;font-weight:600">Total: <span style="color:#0f172a">${fmt$(ohTotal)}/mo</span> · Per job (${autoJobs} jobs): <span style="color:#1e3a5f;font-weight:800">${fmt$(ohPerJob)}</span></div>
       </div>
       <div style="padding:16px 20px">
-        <div style="display:grid;grid-template-columns:1fr 160px;gap:8px;margin-bottom:6px;padding:0 4px">
+        <div style="display:grid;grid-template-columns:1fr 220px 160px;gap:8px;margin-bottom:6px;padding:0 4px">
           <div style="font-size:11px;font-weight:700;color:#64748b;text-transform:uppercase">Item</div>
+          <div style="font-size:11px;font-weight:700;color:#64748b;text-transform:uppercase">Category</div>
           <div style="font-size:11px;font-weight:700;color:#64748b;text-transform:uppercase;text-align:right">Monthly ($)</div>
         </div>
-        ${CFG.overheads.map(o=>`<div style="display:grid;grid-template-columns:1fr 160px;gap:8px;margin-bottom:8px;align-items:center">
+        ${CFG.overheads.map(o=>`<div style="display:grid;grid-template-columns:1fr 220px 160px;gap:8px;margin-bottom:8px;align-items:center">
           <input id="oh-name-${o.id}" value="${esc(o.name)}" style="${inputStyle};font-size:13px;padding:8px 10px">
+          <select id="oh-cat-${o.id}" style="${inputStyle};font-size:13px;padding:8px 10px">${OVERHEAD_CATEGORIES.map(c=>`<option value="${esc(c)}" ${overheadCategory(o)===c?'selected':''}>${esc(c)}</option>`).join('')}</select>
           <input id="oh-val-${o.id}" type="number" step="0.01" value="${o.monthly}" style="${inputStyle};font-size:13px;padding:8px 10px;text-align:right">
         </div>`).join('')}
         <div style="display:flex;justify-content:space-between;margin-top:6px;padding:10px 4px;border-top:1px solid #f1f5f9">
@@ -16523,6 +16611,7 @@ function settingsSave(){
   CFG.overheads = CFG.overheads.map(o=>({
     ...o,
     name: g(`oh-name-${o.id}`) || o.name,
+    category: g(`oh-cat-${o.id}`) || overheadCategory(o),
     monthly: gn(`oh-val-${o.id}`) != null ? gn(`oh-val-${o.id}`) : o.monthly
   }));
 
