@@ -2087,6 +2087,14 @@ async function initDataLayer() {
   }
 
   rehydrateSupInvoices();
+  // Apply confirmed invoice allocations only after cloud/file restore. Running these
+  // from renderMain caused the authoritative restore to overwrite them immediately.
+  const valdisChanged = normalizeConfirmedValdisAllocations();
+  const additionalInvoicesChanged = normalizeConfirmedAdditionalInvoiceAllocations();
+  if (valdisChanged || additionalInvoicesChanged) {
+    await _pushToSupabase().catch(e => console.warn('[Migration] Cloud invoice push failed:', e));
+    await saveToFile().catch(e => console.warn('[Migration] File invoice push failed:', e));
+  }
   _scanAndPersistOverdue(); // auto-fix any overdue invoices on load
   _syncCounters(); // ensure job number counters are ahead of actual max
   renderNav();
@@ -3085,8 +3093,6 @@ function normalizeConfirmedFinalTotals(){
   return changed;
 }
 function renderMain(){
-  normalizeConfirmedValdisAllocations();
-  normalizeConfirmedAdditionalInvoiceAllocations();
   normalizeConfirmedFinalTotals();
   const el = document.getElementById('main');
   if(currentScreen==='dashboard') el.innerHTML = renderDashboard();
