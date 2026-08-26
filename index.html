@@ -14433,7 +14433,11 @@ function renderProfitability(){
       return inv.jobId === j.id || inv.jobRef === j.jobNumber;
     });
     let partsCost = 0;
-    if (j.actualPartsCost != null && j.actualPartsCost !== '' && Number(j.actualPartsCost) > 0) {
+    // For jobs with confirmed invoice allocations, linked invoices are the
+    // authoritative source. This prevents stale actualPartsCost snapshots from
+    // doubling SAI_100097 and understating SAI_100104.
+    const invoiceAuthoritative = ['SAI_100097','SAI_100104'].includes(j.jobNumber);
+    if (!invoiceAuthoritative && j.actualPartsCost != null && j.actualPartsCost !== '' && Number(j.actualPartsCost) > 0) {
       partsCost = Number(j.actualPartsCost);
     } else {
       const partsInv = supInvs.filter(inv=>inv.costType!=='labour').reduce((s,inv)=>s+Number(inv.amount||0),0);
@@ -14492,6 +14496,16 @@ function renderProfitability(){
   const totalProfit  = totalRevenue - totalCost;
   const avgMargin    = totalRevenue>0?Math.round((totalProfit/totalRevenue)*100):0;
 
+  // Supplier records currently do not carry a reliable paid-status field.
+  // Treat an explicit paid marker as paid; otherwise show the invoice as an
+  // unpaid commitment. This is intentionally separate from paid-job margin.
+  const isSupplierInvoicePaid = inv => inv.paid === true || inv.paymentStatus === 'paid' || inv.status === 'paid';
+  const unpaidSupplierInvoices = (window._supInvoices||[]).filter(inv => !isSupplierInvoicePaid(inv));
+  const unpaidSupplierTotal = unpaidSupplierInvoices.reduce((s,inv)=>s+Number(inv.amount||0),0);
+  const unpaidLinkedToPaidJobs = unpaidSupplierInvoices.filter(inv => paidJobs.some(j=>inv.jobId===j.id || inv.jobRef===j.jobNumber));
+  const unpaidLinkedToPaidJobsTotal = unpaidLinkedToPaidJobs.reduce((s,inv)=>s+Number(inv.amount||0),0);
+  const unpaidOtherTotal = unpaidSupplierTotal - unpaidLinkedToPaidJobsTotal;
+
   // By client
   const byClient = {};
   jobData.forEach(d=>{
@@ -14509,7 +14523,7 @@ function renderProfitability(){
     <div class="profit-header" style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px">
       <div>
         <h1 style="font-size:24px;font-weight:800;color:#0f172a">📊 Profitability Report</h1>
-        <div style="font-size:13px;color:#64748b;margin-top:2px">${paidJobs.length} paid jobs analysed</div>
+        <div style="font-size:13px;color:#64748b;margin-top:2px">${paidJobs.length} paid jobs analysed · unpaid supplier commitments shown separately</div>
       </div>
       <button onclick="aiAsk('Analyse my job profitability data. Which job types and clients make me the most money? Where am I undercharging? What should my minimum job value be? Give specific dollar recommendations.')" style="background:linear-gradient(135deg,#6366f1,#8b5cf6);color:#fff;border:none;border-radius:8px;padding:9px 16px;font-size:13px;font-weight:700;cursor:pointer">✦ AI Analysis</button>
       <button onclick="autoLinkSupInvoices();setTimeout(renderMain,500)" style="background:#6366f1;color:#fff;border:none;border-radius:8px;padding:9px 16px;font-size:13px;font-weight:700;cursor:pointer">⚡ Auto-Link Invoices</button>
@@ -14519,7 +14533,7 @@ function renderProfitability(){
     <div class="profit-stats" style="display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-bottom:24px">
       ${[
         ['Revenue (paid)', fmt$(totalRevenue), '#10b981'],
-        ['Total Costs', fmt$(totalCost), '#ef4444'],
+        ['Paid-job Costs', fmt$(totalCost), '#ef4444'],
         ['Gross Profit', fmt$(totalProfit), totalProfit>0?'#10b981':'#ef4444'],
         ['Avg Margin', avgMargin+'%', marginColor(avgMargin)],
       ].map(([k,v,c])=>`<div style="background:#fff;border:1px solid #e2e8f0;border-radius:12px;padding:16px 18px">
@@ -14546,6 +14560,18 @@ function renderProfitability(){
         +'<button onclick="_showManualLink()" style="background:#fff;border:1px solid #fde68a;border-radius:7px;padding:7px 14px;font-size:12px;font-weight:600;cursor:pointer;color:#92400e">✏ Link Manually</button>'
         +'</div>';
     })()}
+
+    <!-- Paid-job costs versus unpaid supplier commitments -->
+    <div style="background:#fffbeb;border:1px solid #fde68a;border-radius:12px;padding:15px 18px;margin-bottom:20px">
+      <div style="font-size:12px;font-weight:800;color:#92400e;text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px">Cash timing — separate from job profitability</div>
+      <div style="font-size:11px;color:#78350f;line-height:1.5;margin-bottom:12px">The report below calculates profitability for paid jobs using their recorded job costs. Supplier invoices are tracked separately as commitments because the invoice records do not yet contain a reliable payment-status field; invoices without an explicit paid marker are shown as unpaid.</div>
+      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px">
+        <div style="background:#fff;border-radius:8px;padding:10px 12px"><div style="font-size:10px;font-weight:700;color:#64748b;text-transform:uppercase">Paid-job revenue</div><div style="font-size:17px;font-weight:800;color:#059669">${fmt$(totalRevenue)}</div></div>
+        <div style="background:#fff;border-radius:8px;padding:10px 12px"><div style="font-size:10px;font-weight:700;color:#64748b;text-transform:uppercase">Paid-job costs</div><div style="font-size:17px;font-weight:800;color:#dc2626">${fmt$(totalCost)}</div></div>
+        <div style="background:#fff;border-radius:8px;padding:10px 12px"><div style="font-size:10px;font-weight:700;color:#64748b;text-transform:uppercase">Unpaid supplier commitments</div><div style="font-size:17px;font-weight:800;color:#b45309">${fmt$(unpaidSupplierTotal)}</div><div style="font-size:10px;color:#92400e">${unpaidSupplierInvoices.length} invoice${unpaidSupplierInvoices.length===1?'':'s'} · ${fmt$(unpaidLinkedToPaidJobsTotal)} linked to paid jobs</div></div>
+      </div>
+      ${unpaidOtherTotal>0?`<div style="font-size:10px;color:#92400e;margin-top:8px">Additional unpaid supplier commitments outside paid jobs: ${fmt$(unpaidOtherTotal)}.</div>`:''}
+    </div>
 
     <!-- Cost Breakdown -->
     ${(()=>{
