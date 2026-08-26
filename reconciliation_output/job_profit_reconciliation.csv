@@ -1,0 +1,48 @@
+job_number,client,status,date,invoice_number,revenue_gst_inc,parts_supplier_cost,other_expenses,labour_cost_recorded,direct_cost_total,allocated_overhead,gross_profit_before_overhead,operating_profit_after_overhead,gross_margin_pct,supplier_refs,expense_refs,cost_basis,flags
+SAI_100020,Sharper Automation,paid,2025-12-05,SAI_100020,600.0,0.0,0.0,0.0,0.0,147.16,600.0,452.84,100.0,,,none recorded,no direct cost recorded
+SAI_100021,Sharper Automation,paid,2025-12-09,SAI_100021,304.3,0.0,0.0,0.0,0.0,147.16,304.3,157.14,100.0,,,none recorded,no direct cost recorded
+SAI_100022,Sharper Automation,paid,2025-12-17,SAI_100022,625.0,0.0,0.0,0.0,0.0,147.16,625.0,477.84,100.0,,,none recorded,no direct cost recorded
+SAI_100023,Peter Shearman,paid,2026-01-14,SAI_100023,1000.0,0.0,0.0,0.0,0.0,147.16,1000.0,852.84,100.0,,,none recorded,no direct cost recorded
+SAI_100031,Peter Shearman,paid,2026-01-14,SAI_100031,1040.0,328.0,0.0,0.0,328.0,147.16,712.0,564.84,68.5,3941266,,linked supplier invoices,OK
+SAI_100026,Dr David Adler / Ray White Double Bay,paid,2026-01-23,SAI_100026,655.6,0.0,0.0,0.0,0.0,147.16,655.6,508.44,100.0,,,none recorded,no direct cost recorded
+SAI_100025,Dali Solutions,paid,2026-02-02,SAI_100025,440.0,0.0,0.0,0.0,0.0,29.43,440.0,410.57,100.0,,,none recorded,no direct cost recorded
+SAI_100030,Robert Alvaro,paid,2026-02-12,SAI_100030,420.0,0.0,0.0,0.0,0.0,29.43,420.0,390.57,100.0,,,none recorded,no direct cost recorded
+SAI_100033,Robert Alvaro,paid,2026-02-12,SAI_100033,568.87,306.35,0.0,0.0,306.35,29.43,262.52,233.09,46.1,00000594,,linked supplier invoices,OK
+SAI_100024A,TQM Design & Construct,paid,2026-02-13,SAI_100024A,900.0,0.0,0.0,0.0,0.0,29.43,900.0,870.57,100.0,,,none recorded,no direct cost recorded
+SAI_10129A,TQM Design & Construct,paid,2026-02-13,SAI_10129A,1350.0,231.0,0.0,0.0,231.0,29.43,1119.0,1089.57,82.9,00000601,,linked supplier invoices,OK
+SAI_100032,Easy Fix Electrics,paid,2026-02-13,SAI_100032,525.0,0.0,0.0,0.0,0.0,29.43,525.0,495.57,100.0,,,none recorded,no direct cost recorded
+SAI_100034,Dali Solutions,paid,2026-02-17,SAI_100034,215.0,0.0,0.0,0.0,0.0,29.43,215.0,185.57,100.0,,,none recorded,no direct cost recorded
+SAI_100037,Sharper Automation,paid,2026-02-23,SAI_100037,600.0,143.3,0.0,0.0,143.3,29.43,456.7,427.27,76.1,B-AU-10564068,,linked supplier invoices,OK
+SAI_100039,Sharper Automation,paid,2026-02-23,SAI_100039,225.0,0.0,0.0,0.0,0.0,29.43,225.0,195.57,100.0,,,none recorded,no direct cost recorded
+SAI_100035,Modern Electric,paid,2026-02-26,SAI_100035,250.0,0.0,0.0,0.0,0.0,29.43,250.0,220.57,100.0,,,none recorded,no direct cost recorded
+SAI_100038,Easy Fix Electrics,paid,2026-02-23,SAI_100038,339.99,0.0,0.0,0.0,0.0,29.43,339.99,310.56,100.0,,,none recorded,no direct cost recorded
+SAI_100040,Winten Property Group,paid,2026-02-26,SAI_100040,420.0,0.0,0.0,0.0,0.0,29.43,420.0,390.57,100.0,,,none recorded,no direct cost recorded
+SAI_100044,Blinds Quickly,paid,2026-03-05,SAI_100044,1508.94,2112.53,0.0,0.0,2112.53,110.37,-603.59,-713.96,-40.0,00000596,,linked supplier invoices,OK
+SAI_100042,Winten Property Group,paid,2026-03-09,SAI_100042,2838.51,2617.99,0.0,0.0,2617.99,110.37,220.52,110.15,7.8,00000595; INV-2585,,linked supplier invoices,OK
+SAI_100052,Blinds Quickly,overdue,2026-02-26,SAI_100041,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,,,,none recorded,OK
+SAI_100045,Blinds Quickly,overdue,2026-03-09,SAI_100045,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,,,,none recorded,OK
+SAI_100046,Blinds Quickly,paid,2026-04-07,SAI_100046,1270.0,0.0,0.0,0.0,0.0,110.37,1270.0,1159.63,100.0,,,none recorded,no direct cost recorded
+SAI_100047,Blinds Quickly,lead,2026-03-09,SAI_100047,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,,,,none recorded,OK
+SAI_100048,Dali Solutions,lead,2026-03-11,,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,,,,none recorded,OK
+SAI_100049,Gawain Constructions,paid,2026-03-17,SAI_100049,450.0,0.0,0.0,0.0,0.0,110.37,450.0,339.63,100.0,,,none recorded,no direct cost recorded
+SAI_100036,Blinds Quickly,paid,2026-02-16,SAI_100036,1508.94,0.0,0.0,0.0,0.0,29.43,1508.94,1479.51,100.0,,,none recorded,no direct cost recorded
+SAI_100043,Winten Property Group,paid,2026-02-24,SAI_100043,2838.51,0.0,0.0,0.0,0.0,29.43,2838.51,2809.08,100.0,,,none recorded,no direct cost recorded
+SAI_100050,Alptekin Habiboglu,paid,2026-03-14,SAI_100050,450.0,0.0,0.0,0.0,0.0,110.37,450.0,339.63,100.0,,,none recorded,no direct cost recorded
+SAI_100051,AJB Electrical,quoted,2026-03-12,,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,,,,none recorded,OK
+SAI_100055,Kebia Importex | Patrick Hall Lederer Group PTY LTD,paid,2026-04-03,SAI_100055,450.0,0.0,7.95,0.0,7.95,110.37,442.05,331.68,98.2,,1775174707735,none recorded,OK
+SAI_100060,Kebia Importex | Patrick Hall Lederer Group PTY LTD,paid,2026-05-08,SAI_100060,3995.0,1345.66,0.0,0.0,1345.66,49.05,2649.34,2600.29,66.3,00000693; 63,,linked supplier invoice matches actualPartsCost; counted once,OK
+SAI_100056,AJB Electrical,paid,2026-04-07,SAI_100056,775.0,0.0,0.0,0.0,0.0,110.37,775.0,664.63,100.0,,,none recorded,no direct cost recorded
+SAI_100058,Sharper Automation,paid,2026-04-08,SAI_100058,600.0,0.0,0.0,0.0,0.0,110.37,600.0,489.63,100.0,,,none recorded,no direct cost recorded
+SAI_100059,Dreamtech AV,paid,2026-05-06,SAI_100059,614.24,0.0,9.65,0.0,9.65,49.05,604.59,555.54,98.4,,ex_str_59,none recorded,OK
+SAI_100062,Maggie,quoted,2026-05-06,SAI_100062,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,,,,none recorded,OK
+SAI_100064,Maggie,paid,2026-05-14,SAI_100064,2500.0,806.58,0.0,0.0,806.58,49.05,1693.42,1644.37,67.7,,,actualPartsCost; supplier invoices also linked (review for overlap),actual parts cost and supplier invoices both present — check overlap
+SAI_100063,Sharper Automation,paid,2026-05-14,SAI_100063,725.0,0.0,0.0,0.0,0.0,49.05,725.0,675.95,100.0,,,none recorded,no direct cost recorded
+SAI_100067,Valdis Berzins,paid,2026-05-28,SAI_100067,3250.0,1788.46,45.8,0.0,1834.26,49.05,1415.74,1366.69,43.6,00000729,ex_str_67,linked supplier invoice matches actualPartsCost; counted once,OK
+SAI_100065,Sharper Automation,paid,2026-05-25,SAI_100065,800.0,0.0,0.0,0.0,0.0,49.05,800.0,750.95,100.0,,,none recorded,no direct cost recorded
+SAI_100066,Calvin,paid,2026-05-22,SAI_100066,450.0,0.0,0.0,0.0,0.0,49.05,450.0,400.95,100.0,,,none recorded,no direct cost recorded
+SAI_100068,Voltec Electrical,overdue,2026-05-21,SAI_100068,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,,,,none recorded,OK
+SAI_100069,Sharper Automation,paid,2026-05-27,SAI_100069,350.0,0.0,12.63,0.0,12.63,49.05,337.37,288.32,96.4,,ex_str_69,none recorded,OK
+SAI_100072,Calvin,invoiced,2026-05-25,SAI_100072,0.0,540.22,0.0,0.0,540.22,0.0,-540.22,-540.22,,,,linked supplier invoice matches actualPartsCost; counted once,OK
+SAI_100070,Valdis Berzins,paid,2026-05-28,SAI_100070,1550.0,660.0,54.55,0.0,714.55,49.05,835.45,786.4,53.9,102,ex_str_70,linked supplier invoices,OK
+SAI_100071,Kellie Koutsis,scheduled,2026-05-25,SAI_100071,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,,,,none recorded,OK
+SAI_100097,Valdis Berzins,paid,2026-07-24,SAI_100097,2258.92,935.88,0.0,0.0,935.88,441.47,1323.04,881.57,58.6,163,,linked supplier invoices,OK

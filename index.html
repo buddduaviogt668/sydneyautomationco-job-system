@@ -2995,6 +2995,37 @@ function calcTotalCosts(jobsList, dateFilter) {
   return jobCosts + unlinkedCost;
 }
 
+// ─── CONFIRMED VALDIS ALLOCATION MIGRATION ───────────────────────────────────
+// User-confirmed allocations. This migration is idempotent and never deletes
+// existing history: it links by job number, updates only the matching invoice
+// reference/amount, and creates a missing invoice only when the job exists.
+function normalizeConfirmedValdisAllocations(){
+  const allocations = {
+    'SAI_100067': {ref:'00000729', supplier:'Sharper Automation Pty Limited', amount:1788.46, date:'2026-05-26', costType:'parts', gstExempt:true, notes:'User-confirmed Valdis allocation: Sharper invoice #00000729; job was before GST registration.'},
+    'SAI_100070': {ref:'102', supplier:'J Lydement Electrical Pty Ltd', amount:660.00, date:'2026-05-26', costType:'labour', gstExempt:true, notes:'User-confirmed Valdis allocation: J Lydement invoice #102; job was before GST registration.'},
+    'SAI_100097': {ref:'163', supplier:'J Lydement Electrical Pty Ltd', amount:935.88, date:'2026-07-24', costType:'labour', gstExempt:false, notes:'User-confirmed Valdis allocation: J Lydement invoice #163; job was after GST registration.'},
+  };
+  let changed = false;
+  Object.entries(allocations).forEach(([jobNumber, a])=>{
+    const j = jobs.find(x=>x.jobNumber===jobNumber);
+    if(!j) return;
+    if(j.gstExempt !== a.gstExempt){ j.gstExempt = a.gstExempt; changed = true; }
+    const digits = String(a.ref).replace(/\D/g,'');
+    let inv = (window._supInvoices||[]).find(i => i.jobId===j.id && String(i.ref||'').replace(/\D/g,'')===digits);
+    if(!inv) inv = (window._supInvoices||[]).find(i => String(i.ref||'').replace(/\D/g,'')===digits && (!i.jobId || i.jobId===j.id));
+    if(inv){
+      const before = JSON.stringify({jobId:inv.jobId,jobRef:inv.jobRef,ref:inv.ref,amount:inv.amount,supplier:inv.supplier,costType:inv.costType});
+      inv.jobId = j.id; inv.jobRef = jobNumber; inv.ref = a.ref; inv.amount = a.amount; inv.supplier = a.supplier; inv.supplierName = a.supplier; inv.costType = a.costType; inv.date = inv.date || a.date; inv.notes = inv.notes || a.notes;
+      if(before !== JSON.stringify({jobId:inv.jobId,jobRef:inv.jobRef,ref:inv.ref,amount:inv.amount,supplier:inv.supplier,costType:inv.costType})) changed = true;
+    } else {
+      (window._supInvoices||[]).push({id:'sinv_valdis_'+a.ref, jobId:j.id, jobRef:jobNumber, supplier:a.supplier, supplierName:a.supplier, ref:a.ref, date:a.date, amount:a.amount, costType:a.costType, notes:a.notes, createdAt:new Date().toISOString(), fileData:false});
+      changed = true;
+    }
+  });
+  if(changed){ save(); saveSupInvoices(); }
+  return changed;
+}
+
 // ─── MAIN RENDER ─────────────────────────────────────────────────────────────
 function normalizeConfirmedFinalTotals(){
   let changed = false;
@@ -3025,6 +3056,7 @@ function normalizeConfirmedFinalTotals(){
   return changed;
 }
 function renderMain(){
+  normalizeConfirmedValdisAllocations();
   normalizeConfirmedFinalTotals();
   const el = document.getElementById('main');
   if(currentScreen==='dashboard') el.innerHTML = renderDashboard();
