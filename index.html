@@ -2929,9 +2929,18 @@ function splitDepositBalance(j){
 //   • split-deposit balance invoices          → GST-inclusive balance (quote − deposit)
 //   • post-GST full invoices where the quote ≠ invoice → invoice is ex-GST → +10% GST
 //   • otherwise                               → stored amount is already GST-inclusive
+function customerAmountBreakdown(amount, gstExempt){
+  const total = Number(amount)||0;
+  const gstRate = Number(CFG.gst)||0.1;
+  const taxable = CFG.gstRegistered !== false && !gstExempt;
+  const subtotal = taxable ? total/(1+gstRate) : total;
+  return {total, subtotal, gst: total-subtotal, taxable};
+}
+
 function jobAmountDisplay(j) {
   const stored = Number(j.invoiceAmount || j.quoteAmount || 0);
   if (stored <= 0) return 0;
+  if (j.invoiceAmountIncludesGST === true || j.quoteAmountIncludesGST === true) return stored;
   // Explicit GST-inclusive totals confirmed by the user, guaranteed regardless of
   // how/when the job data was loaded (quote may still be the ex-GST figure).
   const confirmed = { 'SAI_100059': 550, 'SAI_100093': 495, 'SAI_100094': 605, 'SAI_100097': 2258.92 };
@@ -5994,6 +6003,7 @@ function renderJobDetail(id){
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
         <div>
           <label style="display:block;font-size:11px;font-weight:700;color:#64748b;text-transform:uppercase;margin-bottom:4px">Quote / Job Value ($ incl. GST)</label>
+          <div style="font-size:10px;color:#64748b;margin-top:-2px;margin-bottom:5px">Enter the final customer price including GST. The system splits GST out for documents and does not add it on top.</div>
           <input id="je-quote" type="number" step="0.01" value="${j.quoteAmount||''}" style="${inputStyle}">
         </div>
         <div>
@@ -6035,7 +6045,7 @@ function renderJobDetail(id){
         </div>
         <div>
           <label style="display:block;font-size:11px;font-weight:700;color:#64748b;text-transform:uppercase;margin-bottom:4px">
-            Invoice Amount ($ incl. GST)
+            ${Number(j.depositAmount)>0 ? 'Balance Invoice Amount' : 'Invoice Amount'} ($ incl. GST)
             ${!j.invoiceAmount && j.quoteAmount ? `<button type="button" onclick="document.getElementById('je-invamt').value='${j.quoteAmount}';document.getElementById('je-invamt').style.borderColor='#10b981'" style="margin-left:6px;background:#dcfce7;color:#166534;border:none;border-radius:4px;padding:1px 6px;font-size:10px;font-weight:700;cursor:pointer">← Use quote $${j.quoteAmount}</button>` : ''}
           </label>
           <input id="je-invamt" type="number" step="0.01" value="${j.invoiceAmount||j.quoteAmount||''}" style="${inputStyle}">
@@ -6173,6 +6183,7 @@ function saveJobEdit(id){
   j.scheduledTime = document.getElementById('je-time')?.value||'';
   j.duration      = document.getElementById('je-duration')?.value||'';
   j.quoteAmount   = document.getElementById('je-quote')?.value||'';
+  j.quoteAmountIncludesGST = true;
   j.poNumber      = document.getElementById('je-po')?.value.trim()||'';
   j.poDate        = document.getElementById('je-podate')?.value||'';
   j.depositAmount = document.getElementById('je-deposit')?.value||'';
@@ -6186,10 +6197,11 @@ function saveJobEdit(id){
   const jeQuote = Number(document.getElementById('je-quote')?.value||0);
   const jeDep = Number(document.getElementById('je-deposit')?.value||0);
   let jeInvAmt = document.getElementById('je-invamt')?.value||'';
-  if (jeDep > 0 && jeQuote > 0) {
-    jeInvAmt = (jeQuote - jeDep).toFixed(2);
-  }
+  // Quote, deposit and balance fields are final customer amounts including GST.
+  // Preserve the entered amount; do not silently recalculate or add GST here.
+  if (jeDep > 0 && jeQuote > 0 && !jeInvAmt) jeInvAmt = (jeQuote - jeDep).toFixed(2);
   j.invoiceAmount = jeInvAmt;
+  j.invoiceAmountIncludesGST = true;
   j.invoiceDue    = document.getElementById('je-invdue')?.value||'';
   j.paidDate      = document.getElementById('je-paid')?.value||'';
   j.supplierRef   = document.getElementById('je-supref')?.value.trim()||'';
@@ -20202,13 +20214,14 @@ function generateQuotePDF(jobId){
   if(!j){ showToast('Job not found','error'); return; }
   const c = gc(j.clientId);
   const quoteAmt = Number(j.quoteAmount||0);
+  const quoteBreakdown = customerAmountBreakdown(quoteAmt, j.gstExempt);
   const gstRate = Number(CFG.gst)||0.1;
-  const gstApplied = CFG.gstRegistered !== false;
-  const gst = gstApplied ? quoteAmt - quoteAmt/(1+gstRate) : 0;
-  const total = quoteAmt;
+  const gstApplied = quoteBreakdown.taxable;
+  const gst = quoteBreakdown.gst;
+  const total = quoteBreakdown.total;
   const labourHrs = Number(j.duration||2);
-  const labourAmt = labourHrs * CFG.labourRate;
-  const partsAmt = Math.max(0, quoteAmt - labourAmt);
+  const labourAmt = Math.min(quoteBreakdown.subtotal, labourHrs * CFG.labourRate);
+  const partsAmt = Math.max(0, quoteBreakdown.subtotal - labourAmt);
   const today_str = new Date().toLocaleDateString('en-AU',{day:'2-digit',month:'long',year:'numeric'});
   const due_str = new Date(Date.now()+7*86400000).toLocaleDateString('en-AU',{day:'2-digit',month:'long',year:'numeric'});
 
@@ -20521,14 +20534,14 @@ function openInvoiceLineEditor(jobId){
           </div>
           <div style="font-size:12px;color:#1e3a5f;background:#e0f2fe;border:1px solid #bae6fd;border-radius:8px;padding:8px 12px;margin-bottom:12px;display:flex;align-items:center;gap:8px">
             <span>💡</span>
-            <div><strong>Enter item rates ex-GST</strong>. 10% GST is calculated and added automatically to the invoice total below.</div>
+            <div><strong>Enter final customer rates incl. GST</strong>. GST is split out for the tax-invoice display and is not added on top.</div>
           </div>
           <table style="width:100%;border-collapse:collapse;margin-bottom:10px">
             <thead><tr style="background:#0e1f3d">
               <th style="padding:9px 8px;font-size:10px;font-weight:800;color:#fff;text-transform:uppercase;letter-spacing:0.8px;text-align:left">Description</th>
               <th style="padding:9px 8px;font-size:10px;font-weight:800;color:#fff;text-transform:uppercase;letter-spacing:0.8px;text-align:center;width:70px">Qty</th>
-              <th style="padding:9px 8px;font-size:10px;font-weight:800;color:#fff;text-transform:uppercase;letter-spacing:0.8px;text-align:right;width:125px">Unit $ (ex GST)</th>
-              <th style="padding:9px 8px;font-size:10px;font-weight:800;color:#f07020;text-transform:uppercase;letter-spacing:0.8px;text-align:right;width:115px">Total (ex GST)</th>
+              <th style="padding:9px 8px;font-size:10px;font-weight:800;color:#fff;text-transform:uppercase;letter-spacing:0.8px;text-align:right;width:125px">Unit $ (incl. GST)</th>
+              <th style="padding:9px 8px;font-size:10px;font-weight:800;color:#f07020;text-transform:uppercase;letter-spacing:0.8px;text-align:right;width:115px">Total (incl. GST)</th>
               <th style="width:30px"></th>
             </tr></thead>
             <tbody id="il-line-rows">${renderLineRows()}</tbody>
@@ -20551,18 +20564,18 @@ function openInvoiceLineEditor(jobId){
           <div style="background:#0e1f3d;border-radius:10px;padding:14px 18px;color:#fff;display:flex;flex-direction:column;gap:6px">
             <div style="display:flex;justify-content:space-between;font-size:12px;color:rgba(255,255,255,0.75)">
               <span>Subtotal (ex GST)</span>
-              <span>$<span id="il-subtotal">${lineTotal.toFixed(2)}</span></span>
+              <span>$<span id="il-subtotal">${(invLineTotalInc(j,lineTotal)/(CFG.gstRegistered !== false && !j.gstExempt ? (1+(Number(CFG.gst)||0.1)) : 1)).toFixed(2)}</span></span>
             </div>
             <div style="display:flex;justify-content:space-between;font-size:12px;color:rgba(255,255,255,0.75)">
               <span>GST (10%)</span>
-              <span>$<span id="il-gst">${((CFG.gstRegistered !== false ? lineTotal * (Number(CFG.gst)||0.1) : 0)).toFixed(2)}</span></span>
+              <span>$<span id="il-gst">${(invLineTotalInc(j,lineTotal) - (invLineTotalInc(j,lineTotal)/(CFG.gstRegistered !== false && !j.gstExempt ? (1+(Number(CFG.gst)||0.1)) : 1))).toFixed(2)}</span></span>
             </div>
             <div style="display:flex;justify-content:space-between;font-size:16px;font-weight:800;border-top:1px solid rgba(255,255,255,0.15);padding-top:8px;margin-top:2px">
               <span style="color:#fff">Invoice Total (incl. GST)</span>
-              <span style="color:#f07020">$<span id="il-total">${((CFG.gstRegistered !== false ? lineTotal * (1 + (Number(CFG.gst)||0.1)) : lineTotal)).toFixed(2)}</span></span>
+              <span style="color:#f07020">$<span id="il-total">${invLineTotalInc(j,lineTotal).toFixed(2)}</span></span>
             </div>
           </div>
-          <div id="il-card-total">${CFG.stripePaymentLinkBase ? stripeCardSummaryHtml(lineTotal * (1 + (Number(CFG.gst)||0.1)), true) : ''}</div>
+          <div id="il-card-total">${CFG.stripePaymentLinkBase ? stripeCardSummaryHtml(invLineTotalInc(j,lineTotal), true) : ''}</div>
         </div>
 
         <!-- SECTION 5: Payment Details (from Settings) -->
@@ -20674,11 +20687,11 @@ function openInvoiceLineEditor(jobId){
       const currentEx = j.invoiceLines.reduce((s,l)=>s+((Number(l.qty)||0)*(Number(l.unit)||0)),0);
       const gstRate = (typeof CFG !== 'undefined') ? (Number(CFG.gst) || 0.1) : 0.1;
       const gstOn = (typeof CFG === 'undefined') || CFG.gstRegistered !== false;
-      const currentGst = gstOn ? currentEx * gstRate : 0;
-      const currentTotal = gstOn ? currentEx * (1 + gstRate) : currentEx;
+      const currentTotal = currentEx;
+      const currentGst = gstOn && !j.gstExempt ? currentTotal - (currentTotal/(1+gstRate)) : 0;
 
       const subEl = document.getElementById('il-subtotal');
-      if(subEl) subEl.textContent = currentEx.toFixed(2);
+      if(subEl) subEl.textContent = (gstOn && !j.gstExempt ? currentTotal/(1+gstRate) : currentTotal).toFixed(2);
       const gstEl = document.getElementById('il-gst');
       if(gstEl) gstEl.textContent = currentGst.toFixed(2);
       const totalEl = document.getElementById('il-total');
@@ -20730,11 +20743,12 @@ function openInvoiceLineEditor(jobId){
     // Store invoiceAmount as GST-INCLUSIVE for GST-registered businesses so that
     // jobRevenue() (which reads invoiceAmount directly) reflects actual takings.
     // Pre-GST jobs carry gstExempt:true -- their lineTotal is the exact charge.
-    const lineTotal = j.invoiceLines.reduce((s,l)=>s+(l.qty*l.unit),0);
+    const lineTotal = j.invoiceLines.reduce((s,l)=>s+(Number(l.qty)||0)*(Number(l.unit)||0),0);
     if (lineTotal > 0) {
-      const gstOn = (typeof CFG !== 'undefined') && CFG.gstRegistered !== false;
-      const gstRate = (typeof CFG !== 'undefined') ? (Number(CFG.gst) || 0.1) : 0.1;
-      j.invoiceAmount = (gstOn && !j.gstExempt) ? lineTotal * (1 + gstRate) : lineTotal;
+      // Invoice lines are entered as final customer prices including GST.
+      // Store that total unchanged; the PDF splits out the GST component.
+      j.invoiceAmount = lineTotal.toFixed(2);
+      j.invoiceAmountIncludesGST = true;
     }
     save();
     overlay.remove();
@@ -21721,10 +21735,11 @@ function sendApprovalEmail(jobId){
 
   const validDays = CFG.quoteValidDays||30;
   const quoteVal = Number(j.quoteAmount||0);
-  const showGst = CFG.gstRegistered !== false;
+  const quoteBreakdown = customerAmountBreakdown(quoteVal, j.gstExempt);
+  const showGst = quoteBreakdown.taxable;
   const gstRate = Number(CFG.gst) || 0.1;
-  const gstAmt = showGst ? quoteVal * gstRate : 0;
-  const grandTotal = quoteVal + gstAmt;
+  const gstAmt = quoteBreakdown.gst;
+  const grandTotal = quoteBreakdown.total;
 
   const body =
 `Hi ${firstName},
@@ -21779,10 +21794,11 @@ function printApprovalDoc(jobId){
   const {j, c, depPct, depAmt, authRef} = d;
   const B = CFG;
   const quoteVal = Number(j.quoteAmount||0);
-  const showGst = CFG.gstRegistered !== false;
+  const quoteBreakdown = customerAmountBreakdown(quoteVal, j.gstExempt);
+  const showGst = quoteBreakdown.taxable;
   const gstRate = Number(CFG.gst) || 0.1;
-  const gstAmt = showGst ? quoteVal * gstRate : 0;
-  const grandTotal = quoteVal + gstAmt;
+  const gstAmt = quoteBreakdown.gst;
+  const grandTotal = quoteBreakdown.total;
   const balance  = grandTotal - depAmt;
 
   const logoHtml = B.bizLogo
