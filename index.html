@@ -21752,7 +21752,7 @@ QUOTE DETAILS
 ─────────────────────────────
 Quote Number:  ${j.jobNumber}
 Description:   ${(j.scope||'Lighting control works').split('\n')[0]}
-Quote Amount:  $${quoteVal.toFixed(2)} (excl. GST)
+Quote Amount:  $${quoteBreakdown.subtotal.toFixed(2)} (excl. GST)
 ${showGst?`GST (${Math.round(gstRate*100)}%):     $${gstAmt.toFixed(2)}
 `:''}Total (inc GST): $${grandTotal.toFixed(2)}
 Valid Until:   ${(()=>{const d=new Date();d.setDate(d.getDate()+validDays);return d.toLocaleDateString('en-AU',{day:'2-digit',month:'long',year:'numeric'});})()}
@@ -21891,7 +21891,7 @@ function printApprovalDoc(jobId){
       <div style="min-width:320px;border:1.5px solid #dde3ec;border-radius:10px;overflow:hidden">
         <div style="display:flex;justify-content:space-between;padding:10px 16px;border-bottom:1px solid #e8edf5;background:#f4f7fb">
           <span style="font-size:13px;color:#5a6a80;font-weight:600">Quote Amount (Ex GST)</span>
-          <span style="font-size:13px;font-weight:700;color:#0e1f3d">${fmt$(quoteVal)}</span>
+          <span style="font-size:13px;font-weight:700;color:#0e1f3d">${fmt$(quoteBreakdown.subtotal)}</span>
         </div>
         ${showGst?`<div style="display:flex;justify-content:space-between;padding:10px 16px;border-bottom:1px solid #e8edf5;background:#f4f7fb">
           <span style="font-size:13px;color:#5a6a80;font-weight:600">GST (${Math.round(gstRate*100)}%)</span>
