@@ -11311,12 +11311,12 @@ function openQuickInvoice(){
       </div>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
         <div>
-          <label style="font-size:11px;font-weight:700;color:#64748b;text-transform:uppercase;display:block;margin-bottom:5px">Amount ($ ex GST) *</label>
+          <label style="font-size:11px;font-weight:700;color:#64748b;text-transform:uppercase;display:block;margin-bottom:5px">Amount ($ incl. GST) *</label>
           <input id="qi-amount" type="number" step="0.01" min="0" placeholder="0.00"
-            oninput="const v=Number(this.value)||0;const gst=v*0.1;const tot=v*1.1;document.getElementById('qi-inc-preview').textContent=tot.toFixed(2);document.getElementById('qi-gst-preview').textContent=gst.toFixed(2);"
+            oninput="const v=Number(this.value)||0;const r=Number(CFG.gst)||0.1;const ex=v/(1+r);const gst=v-ex;document.getElementById('qi-inc-preview').textContent=v.toFixed(2);document.getElementById('qi-gst-preview').textContent=gst.toFixed(2);document.getElementById('qi-ex-preview').textContent=ex.toFixed(2);"
             style="width:100%;padding:11px 14px;border:1px solid #e2e8f0;border-radius:8px;font-size:18px;font-weight:700;font-family:'DM Sans',sans-serif;box-sizing:border-box">
           <div id="qi-preview" style="font-size:11px;color:#0369a1;background:#e0f2fe;padding:6px 10px;border-radius:6px;margin-top:6px">
-            +10% GST ($<span id="qi-gst-preview">0.00</span>) = <strong>$<span id="qi-inc-preview">0.00</span></strong> incl. GST
+            Subtotal ex GST $<span id="qi-ex-preview">0.00</span> + GST $<span id="qi-gst-preview">0.00</span> = <strong>$<span id="qi-inc-preview">0.00</span></strong> incl. GST
           </div>
         </div>
         <div>
@@ -11338,19 +11338,20 @@ function openQuickInvoice(){
 function _qiCreate(printAfter){
   const clientId = document.getElementById('qi-client')?.value||'';
   const desc = (document.getElementById('qi-desc')?.value||'').trim();
-  const exGstAmount = parseFloat(document.getElementById('qi-amount')?.value||0);
+  const incGstAmount = parseFloat(document.getElementById('qi-amount')?.value||0);
   const date = document.getElementById('qi-date')?.value || today();
   const po = (document.getElementById('qi-po')?.value||'').trim();
   if(!clientId){ alert('Select a client.'); return; }
   if(!desc){ alert('Enter a description.'); return; }
-  if(!exGstAmount){ alert('Enter an amount.'); return; }
+  if(!incGstAmount){ alert('Enter an amount including GST.'); return; }
   const num = counters['SAI']++;
   const invNum = jobNum('SAI', num);
   if(jobs.some(x=>x.invoiceNumber===invNum || x.jobNumber===invNum)){ alert('Invoice reference '+invNum+' already exists. No invoice was created.'); return; }
   const cfgDays = payTermsDays(CFG.invoicePaymentTerms||CFG.bizPaymentTerms, 7);
   const gstOn = (typeof CFG !== 'undefined') && CFG.gstRegistered !== false;
   const gstRate = (typeof CFG !== 'undefined') ? (Number(CFG.gst) || 0.1) : 0.1;
-  const incGstTotal = gstOn ? exGstAmount * (1 + gstRate) : exGstAmount;
+  const incGstTotal = incGstAmount;
+  const exGstAmount = gstOn ? incGstTotal / (1 + gstRate) : incGstTotal;
 
   const newJob = {
     id: 'j_qi_'+Date.now(), type:'SAI', jobNumber:invNum,
@@ -11358,7 +11359,7 @@ function _qiCreate(printAfter){
     invoiceAmount:incGstTotal.toFixed(2), quoteAmount:incGstTotal.toFixed(2),
     amountExGST:exGstAmount.toFixed(2), gstAmount:(incGstTotal-exGstAmount).toFixed(2), amountInclGST:incGstTotal.toFixed(2),
     invoiceAmountIncludesGST:true,
-    invoiceLines:[{id:Date.now().toString(), desc:desc, qty:1, unit:exGstAmount, amount:exGstAmount}],
+    invoiceLines:[{id:Date.now().toString(), desc:desc, qty:1, unit:incGstTotal, amount:incGstTotal}],
     status:'invoiced', createdAt:date, invoiceDate:date, invoiceDue:resolveDueDate(date, CFG.invoicePaymentTerms||CFG.bizPaymentTerms||'7 days'),
     scheduledDate:date, poNumber:po, notes:'Quick invoice',
     activityLog:[{ts:today()+' (quick)',msg:'Invoice created via Quick Invoice'}],
