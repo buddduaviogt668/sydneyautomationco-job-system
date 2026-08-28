@@ -2943,7 +2943,7 @@ function jobAmountDisplay(j) {
   if (j.invoiceAmountIncludesGST === true || j.quoteAmountIncludesGST === true) return stored;
   // Explicit GST-inclusive totals confirmed by the user, guaranteed regardless of
   // how/when the job data was loaded (quote may still be the ex-GST figure).
-  const confirmed = { 'SAI_100059': 550, 'SAI_100093': 495, 'SAI_100094': 605, 'SAI_100097': 2258.92 };
+  const confirmed = { 'SAI_100059': 550, 'SAI_100091': 797.50, 'SAI_100093': 495, 'SAI_100094': 605, 'SAI_100097': 2258.92 };
   if (confirmed[j.jobNumber] !== undefined) return confirmed[j.jobNumber];
   if (j.gstExempt === true) return stored;
   if (Number(j.depositAmount) > 0) {
@@ -3128,6 +3128,15 @@ function normalizeConfirmedFinalTotals(){
     if(lineTotal > 0 && recorded > 0 && Math.abs(recorded - lineTotal * 1.1) <= 0.02){
       j.invoiceAmount = lineTotal.toFixed(2);
       j.invoiceAmountIncludesGST = true;
+      changed = true;
+    }
+  });
+  const confirmedFinalTotals = { 'SAI_100091': 797.50, 'SAI_100094': 605.00 };
+  Object.entries(confirmedFinalTotals).forEach(function(entry){
+    const target = jobs.find(j => j.jobNumber === entry[0]);
+    if(target && Number(target.invoiceAmount) > 0 && (Math.abs(Number(target.invoiceAmount)-entry[1]) > 0.01 || target.invoiceAmountIncludesGST !== true)){
+      target.invoiceAmount = entry[1].toFixed(2);
+      target.invoiceAmountIncludesGST = true;
       changed = true;
     }
   });
