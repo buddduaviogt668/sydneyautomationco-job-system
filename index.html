@@ -20796,9 +20796,10 @@ function generateInvoicePDF(jobId, mode){
   const isPaid = isDeposit ? depositIsPaid(j) : j.status==='paid';
   const depAmt = isDeposit ? (Number(dh.depositAmount)||depositAmountFor(j)) : 0;
   let invAmt = isDeposit ? depAmt : (Number(j.invoiceAmount||j.quoteAmount||0) > 0 ? jobAmountDisplay(j) : 0);
+  const confirmedInclusiveJob = ['SAI_100091','SAI_100093','SAI_100094','SAI_100095','SAI_100097'].includes(j.jobNumber);
   if(!isDeposit && invAmt > 0){
     const sb = splitDepositBalance(j);
-    if(sb != null && j.invoiceAmountIncludesGST !== true){
+    if(sb != null && j.invoiceAmountIncludesGST !== true && !confirmedInclusiveJob){
       const gst = Number(CFG.gst)||0.1;
       if(Math.abs(invAmt - sb * (1 + gst)) <= 0.02) invAmt = sb;
     }
@@ -20813,7 +20814,7 @@ function generateInvoicePDF(jobId, mode){
   // Legacy line items may contain an ex-GST amount even though the authoritative
   // customer total is inclusive. Do not generate a document whose line total and
   // invoice total disagree; replace stale lines with one inclusive total line.
-  if(!isDeposit && invAmt > 0 && j.invoiceAmountIncludesGST === true){
+  if(!isDeposit && invAmt > 0){
     const rawLineTotal = lines.reduce((s,l)=>s+(Number(l.qty)||0)*(Number(l.unit)||0),0);
     if(Math.abs(rawLineTotal - invAmt) > 0.02){
       lines = [{desc:hf.scopeText||j.scope||'Works as agreed', qty:1, unit:invAmt, amount:invAmt}];
