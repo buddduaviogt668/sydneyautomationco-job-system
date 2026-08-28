@@ -2943,7 +2943,7 @@ function jobAmountDisplay(j) {
   if (j.invoiceAmountIncludesGST === true || j.quoteAmountIncludesGST === true) return stored;
   // Explicit GST-inclusive totals confirmed by the user, guaranteed regardless of
   // how/when the job data was loaded (quote may still be the ex-GST figure).
-  const confirmed = { 'SAI_100059': 550, 'SAI_100091': 797.50, 'SAI_100093': 495, 'SAI_100094': 605, 'SAI_100097': 2258.92 };
+  const confirmed = { 'SAI_100059': 550, 'SAI_100091': 797.50, 'SAI_100093': 495, 'SAI_100094': 605, 'SAI_100095': 880.00, 'SAI_100097': 2258.92 };
   if (confirmed[j.jobNumber] !== undefined) return confirmed[j.jobNumber];
   if (j.gstExempt === true) return stored;
   if (Number(j.depositAmount) > 0) {
@@ -3131,7 +3131,7 @@ function normalizeConfirmedFinalTotals(){
       changed = true;
     }
   });
-  const confirmedFinalTotals = { 'SAI_100091': 797.50, 'SAI_100094': 605.00 };
+  const confirmedFinalTotals = { 'SAI_100091': 797.50, 'SAI_100094': 605.00, 'SAI_100095': 880.00 };
   Object.entries(confirmedFinalTotals).forEach(function(entry){
     const target = jobs.find(j => j.jobNumber === entry[0]);
     if(target && Number(target.invoiceAmount) > 0 && (Math.abs(Number(target.invoiceAmount)-entry[1]) > 0.01 || target.invoiceAmountIncludesGST !== true)){
@@ -20786,22 +20786,31 @@ function generateInvoicePDF(jobId, mode){
   const _termsDefault = (_hEom ? 'Payment due by the end of the month following the invoice date.' : (resolvedTermDays===0 ? 'Payment due on invoice date.' : 'Payment is due within '+resolvedTermsLabel+' of invoice date.')) + ' This business is registered for GST. This is a tax invoice for GST purposes.';
   const isPaid = isDeposit ? depositIsPaid(j) : j.status==='paid';
   const depAmt = isDeposit ? (Number(dh.depositAmount)||depositAmountFor(j)) : 0;
-  let invAmt = isDeposit ? depAmt : Number(j.invoiceAmount||j.quoteAmount||0);
+  let invAmt = isDeposit ? depAmt : (Number(j.invoiceAmount||j.quoteAmount||0) > 0 ? jobAmountDisplay(j) : 0);
   if(!isDeposit && invAmt > 0){
     const sb = splitDepositBalance(j);
-    if(sb != null){
+    if(sb != null && j.invoiceAmountIncludesGST !== true){
       const gst = Number(CFG.gst)||0.1;
       if(Math.abs(invAmt - sb * (1 + gst)) <= 0.02) invAmt = sb;
     }
   }
 
   // Build line items
-  const lines = isDeposit
+  let lines = isDeposit
     ? [{desc:dh.depositDesc||'Deposit '+(effectiveDepositPct(j))+'% — '+(dh.scopeText||j.scope||'Works as agreed'), qty:1, unit:depAmt, amount:depAmt}]
     : ((j.invoiceLines && j.invoiceLines.length)
         ? j.invoiceLines
         : [{desc:hf.scopeText||j.scope||'Works as agreed', qty:1, unit:invAmt, amount:invAmt}]);
-  const lineTotal = lines.reduce((s,l)=>s+(l.qty*l.unit),0);
+  // Legacy line items may contain an ex-GST amount even though the authoritative
+  // customer total is inclusive. Do not generate a document whose line total and
+  // invoice total disagree; replace stale lines with one inclusive total line.
+  if(!isDeposit && invAmt > 0 && j.invoiceAmountIncludesGST === true){
+    const rawLineTotal = lines.reduce((s,l)=>s+(Number(l.qty)||0)*(Number(l.unit)||0),0);
+    if(Math.abs(rawLineTotal - invAmt) > 0.02){
+      lines = [{desc:hf.scopeText||j.scope||'Works as agreed', qty:1, unit:invAmt, amount:invAmt}];
+    }
+  }
+  const lineTotal = lines.reduce((s,l)=>s+(Number(l.qty)||0)*(Number(l.unit)||0),0);
   const _gst = Number(CFG.gst)||0.1;
   const _gstApplied = CFG.gstRegistered !== false;
   // Add GST only when line items are clearly ex-GST. Existing line items whose
@@ -20927,8 +20936,8 @@ function generateInvoicePDF(jobId, mode){
         <tr style="background:#0e1f3d">
           <th style="padding:11px 14px;font-size:10px;font-weight:800;color:#fff;text-transform:uppercase;letter-spacing:1px;text-align:left">Description</th>
           <th style="padding:11px 14px;font-size:10px;font-weight:800;color:#fff;text-transform:uppercase;letter-spacing:1px;text-align:center;width:60px">Qty</th>
-          <th style="padding:11px 14px;font-size:10px;font-weight:800;color:#fff;text-transform:uppercase;letter-spacing:1px;text-align:right;width:120px">Unit ($)</th>
-          <th style="padding:11px 14px;font-size:10px;font-weight:800;color:#f07020;text-transform:uppercase;letter-spacing:1px;text-align:right;width:130px">Amount ($)</th>
+          <th style="padding:11px 14px;font-size:10px;font-weight:800;color:#fff;text-transform:uppercase;letter-spacing:1px;text-align:right;width:120px">Unit (incl. GST)</th>
+          <th style="padding:11px 14px;font-size:10px;font-weight:800;color:#f07020;text-transform:uppercase;letter-spacing:1px;text-align:right;width:130px">Amount Due (incl. GST)</th>
         </tr>
       </thead>
       <tbody>${lineRowsHtml}</tbody>
@@ -20938,7 +20947,7 @@ function generateInvoicePDF(jobId, mode){
     <div style="display:flex;justify-content:flex-end;padding:20px 28px;border-top:2px solid #0e1f3d">
       <div style="min-width:280px">
         <div style="display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid #e8edf5">
-          <span style="font-size:13px;color:#64748b;font-weight:600">Subtotal (Ex GST)</span>
+          <span style="font-size:13px;color:#64748b;font-weight:600">Taxable Subtotal (Ex GST)</span>
           <span style="font-size:13px;font-weight:700">$${_subEx.toFixed(2)}</span>
         </div>
         ${_gstApplied ? `<div style="display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid #e8edf5"><span style="font-size:13px;color:#64748b;font-weight:600">GST (${Math.round(_gst*100)}%)</span><span style="font-size:13px;font-weight:700">$${_gstAmt.toFixed(2)}</span></div>` : ''}
