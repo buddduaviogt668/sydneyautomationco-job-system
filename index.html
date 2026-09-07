@@ -2940,7 +2940,7 @@ function customerAmountBreakdown(amount, gstExempt){
 function jobAmountDisplay(j) {
   const stored = Number(j.invoiceAmount || j.quoteAmount || 0);
   if (stored <= 0) return 0;
-  if (Number(j.depositAmount) > 0) {
+  if (j.type !== 'SAQ' && Number(j.depositAmount) > 0) {
     const sb = splitDepositBalance(j);
     if (sb != null) return sb;
   }
