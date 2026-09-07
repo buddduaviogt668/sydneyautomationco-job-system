@@ -2940,6 +2940,10 @@ function customerAmountBreakdown(amount, gstExempt){
 function jobAmountDisplay(j) {
   const stored = Number(j.invoiceAmount || j.quoteAmount || 0);
   if (stored <= 0) return 0;
+  if (Number(j.depositAmount) > 0) {
+    const sb = splitDepositBalance(j);
+    if (sb != null) return sb;
+  }
   if (j.invoiceAmountIncludesGST === true || j.quoteAmountIncludesGST === true) return stored;
   // Explicit GST-inclusive totals confirmed by the user, guaranteed regardless of
   // how/when the job data was loaded (quote may still be the ex-GST figure).
@@ -6057,9 +6061,9 @@ function renderJobDetail(id){
         <div>
           <label style="display:block;font-size:11px;font-weight:700;color:#64748b;text-transform:uppercase;margin-bottom:4px">
             ${Number(j.depositAmount)>0 ? 'Balance Invoice Amount' : 'Invoice Amount'} ($ incl. GST)
-            ${!j.invoiceAmount && j.quoteAmount ? `<button type="button" onclick="document.getElementById('je-invamt').value='${j.quoteAmount}';document.getElementById('je-invamt').style.borderColor='#10b981'" style="margin-left:6px;background:#dcfce7;color:#166534;border:none;border-radius:4px;padding:1px 6px;font-size:10px;font-weight:700;cursor:pointer">← Use quote $${j.quoteAmount}</button>` : ''}
+            ${!j.invoiceAmount && j.quoteAmount ? `<button type="button" onclick="document.getElementById('je-invamt').value='${Number(j.depositAmount)>0 ? (Number(j.quoteAmount)-Number(j.depositAmount)).toFixed(2) : j.quoteAmount}';document.getElementById('je-invamt').style.borderColor='#10b981'" style="margin-left:6px;background:#dcfce7;color:#166534;border:none;border-radius:4px;padding:1px 6px;font-size:10px;font-weight:700;cursor:pointer">← Use ${Number(j.depositAmount)>0 ? 'balance $'+((Number(j.quoteAmount)-Number(j.depositAmount)).toFixed(2)) : 'quote $'+j.quoteAmount}</button>` : ''}
           </label>
-          <input id="je-invamt" type="number" step="0.01" value="${jobAmountDisplay(j)||j.invoiceAmount||j.quoteAmount||''}" style="${inputStyle}">
+          <input id="je-invamt" type="number" step="0.01" value="${Number(j.depositAmount)>0 ? (j.invoiceAmount || (Number(j.quoteAmount)-Number(j.depositAmount)).toFixed(2)) : (jobAmountDisplay(j)||j.invoiceAmount||j.quoteAmount||'')}" style="${inputStyle}">
         </div>
         <div>
           <label style="display:block;font-size:11px;font-weight:700;color:#64748b;text-transform:uppercase;margin-bottom:4px">Invoice Due Date</label>
