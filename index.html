@@ -3149,13 +3149,6 @@ function normalizeConfirmedFinalTotals(){
       if(targetChanged) changed = true;
     }
   });
-  const target = jobs.find(j => j.jobNumber === 'SAI_100106');
-  if(target && (Number(target.invoiceAmount) !== 715 || Number(target.quoteAmount) !== 715 || target.invoiceAmountIncludesGST !== true)){
-    target.invoiceAmount = '715.00';
-    target.quoteAmount = '715.00';
-    target.invoiceAmountIncludesGST = true;
-    changed = true;
-  }
   if(changed) save();
   return changed;
 }
@@ -24287,20 +24280,6 @@ window.addEventListener('beforeunload', (e) => {
     STORE.set('sinv_migration_v2', '1');
   })();
 
-  // One-time correction: SAI_100106 was confirmed as a final GST-inclusive $715.00 invoice.
-  // Mark it explicitly so the display and PDF do not add GST a second time.
-  (function(){
-    if(STORE.get('sai_100106_gst_inclusive_v1')) return;
-    var target = jobs.find(function(j){ return j.jobNumber === 'SAI_100106'; });
-    if(target){
-      target.invoiceAmount = '715.00';
-      target.quoteAmount = '715.00';
-      target.invoiceAmountIncludesGST = true;
-      save();
-      console.log('[Data] SAI_100106 corrected to final GST-inclusive $715.00');
-    }
-    STORE.set('sai_100106_gst_inclusive_v1', '1');
-  })();
   // 2. Restore backup folder handle
   await initBackupDir();
   // 3. Start auto-save + auto-backup intervals
