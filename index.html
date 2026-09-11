@@ -1475,6 +1475,35 @@ jobs.forEach(j => {
 });
 if (_jobsDirty) localStorage.setItem('sac:jobs', JSON.stringify(jobs));
 
+// ─── MIGRATION: Reconcile received deposits and balance amounts ──────────
+jobs.forEach(j => {
+  if (j.id === 'j_nq_1788172362088' || j.jobNumber === 'SAI_100123') {
+    if (Number(j.invoiceAmount) < 0 || j.invoiceAmount === '-1390.00') {
+      j.invoiceAmount = '2780.00';
+      _jobsDirty = true;
+    }
+    if (!j.depositDate || j.depositStatus !== 'paid') {
+      j.depositStatus = 'paid';
+      j.depositDate = j.depositDate || '2026-09-07';
+      _jobsDirty = true;
+    }
+  }
+  if (j.id === 'j_xl_1774262584920' || j.invoiceNumber === 'SAI_100110') {
+    if (!j.depositDate || j.depositStatus !== 'paid') {
+      j.depositStatus = 'paid';
+      j.depositDate = j.depositDate || '2026-09-11';
+      _jobsDirty = true;
+    }
+  }
+  if (Number(j.invoiceAmount) < 0) {
+    const q = Number(j.quoteAmount) || 0;
+    const d = Number(j.depositAmount) || 0;
+    j.invoiceAmount = (q > d ? q - d : 0).toFixed(2);
+    _jobsDirty = true;
+  }
+});
+if (_jobsDirty) localStorage.setItem('sac:jobs', JSON.stringify(jobs));
+
 // ─── MIGRATION: Tag pre-GST-registration jobs so they never get GST added ────
 // You were not registered for GST until after SAI_100089 (13 July 2026).
 // Any SAI job ≤ 100089 that has invoice line items must NOT have 10% added
@@ -2967,8 +2996,11 @@ function jobAmountDisplay(j) {
 // If it has an invoice amount entered, that is the balance due (GST-inclusive).
 // Otherwise falls back to quote amount minus deposit.
 function depositIsPaid(j){
-  // Explicit status wins; legacy records remain compatible via depositDate.
-  return Number(j.depositAmount)>0 && (j.depositStatus==='paid' || (!j.depositStatus && !!j.depositDate));
+  if (!(Number(j.depositAmount) > 0)) return false;
+  if (j.depositStatus === 'paid') return true;
+  if (j.depositDate) return true;
+  if (['deposit_paid', 'parts_ordered', 'scheduled', 'paid'].includes(j.status)) return true;
+  return false;
 }
 function depositOutstanding(j){
   return Number(j.depositAmount)>0 && !depositIsPaid(j) ? Number(j.depositAmount) : 0;
@@ -3221,7 +3253,9 @@ function recordDepositReceived(jobId){
   const s=receivableSchedule(j).find(x=>x.kind==='deposit'); if(!s||s.paid) return;
   const date=prompt('Deposit cleared date (YYYY-MM-DD):',today()); if(!date) return;
   const r=ledgerRecordPayment('deposit',j.id,s.amount,date,'Deposit received for '+(j.jobNumber||'')); if(!r.ok){showToast(r.error,'warn');return;}
-  j.depositStatus='paid'; j.depositDate=date; j.activityLog=(j.activityLog||[]).concat([{ts:new Date().toLocaleString('en-AU'),msg:'Deposit received and posted to ledger'}]); save(); showToast('Deposit recorded — ledger event created','success'); renderMain();
+  j.depositStatus='paid'; j.depositDate=date;
+  if(j.status==='deposit_due') j.status='deposit_paid';
+  j.activityLog=(j.activityLog||[]).concat([{ts:new Date().toLocaleString('en-AU'),msg:'Deposit received ($'+Number(s.amount).toFixed(2)+') and posted to ledger'}]); save(); showToast('Deposit recorded — ledger event created','success'); renderMain();
 }
 function recordBalanceReceived(jobId){
   const j=jobs.find(x=>x.id===jobId); if(!j) return;
@@ -5258,11 +5292,14 @@ function _applyStatus(j, newStatus){
     }
     showToast('Invoice '+j.invoiceNumber+' auto-created — open job to adjust amount or send PDF','info');
   }
-  if(newStatus==='deposit_paid' && !j.depositDate) j.depositDate=today();
-  if(newStatus==='deposit_paid' && !j.depositAmount && j.quoteAmount){
-    const depPct=effectiveDepositPct(j);
-    j.depositAmount=(Number(j.quoteAmount)*depPct/100).toFixed(2);
-    showToast('Deposit defaulted to '+depPct+'% of quote — update in job detail if different','info');
+  if(newStatus==='deposit_paid'){
+    j.depositStatus = 'paid';
+    if(!j.depositDate) j.depositDate = today();
+    if(!j.depositAmount && j.quoteAmount){
+      const depPct = effectiveDepositPct(j);
+      j.depositAmount = (Number(j.quoteAmount)*depPct/100).toFixed(2);
+      showToast('Deposit defaulted to '+depPct+'% of quote — update in job detail if different','info');
+    }
   }
   if(newStatus==='parts_ordered' && !j.partsOrderDate) j.partsOrderDate=today();
   if(newStatus==='scheduled' && j.scheduledDate && j.clientId){
@@ -11464,7 +11501,10 @@ function getDebtorEntries(){
   const out=[];
   (jobs||[]).filter(j=>['invoiced','overdue'].includes(j.status)).forEach(j=>{
     const dep=Math.max(0,Number(j.depositAmount)||0);
-    const bal=Math.max(0,Number(j.invoiceAmount)>0 ? jobAmountDisplay(j) : 0);
+    let bal=Math.max(0,Number(j.invoiceAmount)>0 ? jobAmountDisplay(j) : 0);
+    if(bal<=0 && dep>0 && Number(j.quoteAmount)>dep){
+      bal=Math.max(0, Number(j.quoteAmount)-dep);
+    }
     const depPaid=depositIsPaid(j);
     const jobPaid=j.status==='paid';
     const client=gc(j.clientId);
@@ -11474,7 +11514,10 @@ function getDebtorEntries(){
     if(bal>0 && !jobPaid){
       out.push({j,client,kind:'balance',number:j.invoiceNumber||j.jobNumber,amount:bal,due:j.invoiceDue||'',label:dep>0?'Balance':'Invoice'});
     }
-    if(dep<=0 && bal<=0){
+    if(depPaid && bal<=0 && !jobPaid){
+      const fallback=Math.max(0,jobOutstanding(j));
+      if(fallback>0) out.push({j,client,kind:'balance',number:j.invoiceNumber||j.jobNumber,amount:fallback,due:j.invoiceDue||'',label:'Balance'});
+    } else if(dep<=0 && bal<=0 && !jobPaid){
       const fallback=Math.max(0,jobOutstanding(j));
       if(fallback>0) out.push({j,client,kind:'invoice',number:j.invoiceNumber||j.jobNumber,amount:fallback,due:j.invoiceDue||'',label:'Invoice'});
     }
@@ -11535,6 +11578,10 @@ function renderAgedDebtors(){
           </div>
           <div style="text-align:right"><div style="font-size:14px;font-weight:800;color:${bColors[bk]}">${fmt$(e.amount)}</div></div>
           <div style="display:flex;gap:5px">
+            ${e.kind==='deposit'
+              ? `<button onclick="recordDepositReceived('${j.id}')" style="background:#10b981;color:#fff;border:none;border-radius:5px;padding:5px 8px;font-size:11px;font-weight:700;cursor:pointer" title="Record deposit received">✓ Recv</button>`
+              : `<button onclick="recordBalanceReceived('${j.id}')" style="background:#0f766e;color:#fff;border:none;border-radius:5px;padding:5px 8px;font-size:11px;font-weight:700;cursor:pointer" title="Record balance payment received">✓ Paid</button>`
+            }
             <button onclick="sendSMS('${j.id}','chase')" style="background:#25D366;color:#fff;border:none;border-radius:5px;padding:5px 8px;font-size:11px;font-weight:700;cursor:pointer" title="Draft/chase via SMS">💬</button>
             <button onclick="recordCollectionAttempt('${j.id}')" style="background:#fef3c7;border:1px solid #fde68a;color:#92400e;border-radius:5px;padding:5px 8px;font-size:11px;font-weight:700;cursor:pointer" title="Log collection attempt">Log</button>
             ${CFG.stripePaymentLinkBase?`<button onclick="openStripePaymentLink('${j.id}')" style="background:#635bff;color:#fff;border:none;border-radius:5px;padding:5px 8px;font-size:11px;font-weight:700;cursor:pointer" title="Open Stripe pay link">💳</button>`:''}
